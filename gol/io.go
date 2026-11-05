@@ -47,6 +47,9 @@ func (io *ioState) writePgmImage() {
 	// Request a filename from the distributor.
 	filename := <-io.channels.filename
 
+	fmt.Println("writing to file: ", filename)
+	fmt.Println("turns: ", io.params.Turns, ", threads: ", io.params.Threads)
+
 	file, ioError := os.Create("out/" + filename + ".pgm")
 	util.Check(ioError)
 	defer file.Close()
@@ -87,7 +90,6 @@ func (io *ioState) writePgmImage() {
 
 // readPgmImage opens a pgm file and sends its data as an array of bytes.
 func (io *ioState) readPgmImage() {
-
 	// Request a filename from the distributor.
 	filename := <-io.channels.filename
 
@@ -135,11 +137,17 @@ func startIo(p Params, c ioChannels) {
 		// Block and wait for requests from the distributor
 		switch command {
 		case ioInput:
-			io.readPgmImage()
+			{
+				io.readPgmImage()
+			}
 		case ioOutput:
-			io.writePgmImage()
+			{
+				io.writePgmImage()
+			}
 		case ioCheckIdle:
-			io.channels.idle <- true
+			{
+				io.channels.idle <- true
+			}
 		}
 	}
 }

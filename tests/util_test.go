@@ -50,7 +50,8 @@ func boardFail(t *testing.T, given, expected []util.Cell, p gol.Params) bool {
 		p.Threads,
 		p.Turns,
 	)
-	if p.ImageWidth == 16 && p.ImageHeight == 16 {
+
+	if p.ImageWidth <= 64 && p.ImageHeight <= 64 {
 		errorString = errorString + util.AliveCellsToString(given, expected, p.ImageWidth, p.ImageHeight)
 	}
 	t.Error(errorString)
@@ -73,6 +74,7 @@ func emptyOutFolder() {
 }
 
 func readAliveCells(t *testing.T, path string, width, height int) []util.Cell {
+	fmt.Println("file: ", path)
 	data, ioError := os.ReadFile(path)
 	if ioError != nil {
 		t.Fatalf("%v %v", util.Red("ERROR"), ioError)

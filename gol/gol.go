@@ -1,5 +1,9 @@
 package gol
 
+import (
+	"strconv"
+)
+
 // Params provides the details of how to run the Game of Life and which image to load.
 type Params struct {
 	Turns       int
@@ -13,25 +17,44 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 
 	//	TODO: Put the missing channels in here.
 
-	ioCommand := make(chan ioCommand)
-	ioIdle := make(chan bool)
+	ioCommandChan := make(chan ioCommand)
+	ioIdleChan := make(chan bool)
+	ioFilenameChan := make(chan string)
+	ioOutputChan := make(chan uint8)
+	ioInputChan := make(chan uint8)
 
 	ioChannels := ioChannels{
-		command:  ioCommand,
-		idle:     ioIdle,
-		filename: nil,
-		output:   nil,
-		input:    nil,
+		command:  ioCommandChan,
+		idle:     ioIdleChan,
+		filename: ioFilenameChan,
+		output:   ioOutputChan,
+		input:    ioInputChan,
 	}
 	go startIo(p, ioChannels)
 
 	distributorChannels := distributorChannels{
 		events:     events,
-		ioCommand:  ioCommand,
-		ioIdle:     ioIdle,
-		ioFilename: nil,
-		ioOutput:   nil,
-		ioInput:    nil,
+		ioCommand:  ioCommandChan,
+		ioIdle:     ioIdleChan,
+		ioFilename: ioFilenameChan,
+		ioOutput:   ioOutputChan,
+		ioInput:    ioInputChan,
 	}
-	distributor(p, distributorChannels)
+
+	fileName := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
+
+	ioCommandChan <- ioInput
+	ioFilenameChan <- fileName
+
+	go func() {
+		if p.Turns == 100 {
+			ioFilenameChan <- fileName + "x100"
+		} else if p.Turns == 0 {
+			ioFilenameChan <- fileName + "x0"
+		} else {
+			ioFilenameChan <- fileName + "x" + strconv.Itoa(p.Threads)
+		}
+	}()
+
+	distributor(p, distributorChannels, keyPresses)
 }
