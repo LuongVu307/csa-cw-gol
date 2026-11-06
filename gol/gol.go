@@ -1,7 +1,6 @@
 package gol
 
 import (
-	"fmt"
 	"strconv"
 )
 
@@ -15,7 +14,6 @@ type Params struct {
 
 // Run starts the processing of Game of Life. It should initialise channels and goroutines.
 func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
-	fmt.Println("gol run started")
 
 	//	TODO: Put the missing channels in here.
 
@@ -47,19 +45,6 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 
 	ioCommandChan <- ioInput
 	ioFilenameChan <- fileName
-
-	go func() {
-		// var outFileName string
-		// if p.Turns == 100 {
-		// 	outFileName = fileName + "x100"
-		// } else if p.Turns == 0 {
-		// 	outFileName = fileName + "x0"
-		// } else {
-		// 	outFileName = fileName + "x" + strconv.Itoa(p.Threads)
-		// }
-		// fmt.Println("-----OUTFILENAME-IS-----", outFileName)
-		// ioFilenameChan <- outFileName
-	}()
 
 	distributor(p, distributorChannels, keyPresses)
 }
