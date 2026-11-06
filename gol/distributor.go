@@ -27,15 +27,10 @@ func modulo(b int, m int) int {
 	}
 }
 
-func calculateNextState(p Params, world [][]uint8) [][]uint8 {
+func calculateNextState(p Params, world [][]uint8, res [][]uint8) {
 
 	H := p.ImageHeight
 	W := p.ImageWidth
-
-	world2 := make([][]uint8, H)
-	for i := range world2 {
-		world2[i] = make([]uint8, W)
-	}
 
 	for h := 0; h < H; h++ {
 		for w := 0; w < W; w++ {
@@ -69,15 +64,14 @@ func calculateNextState(p Params, world [][]uint8) [][]uint8 {
 			}
 
 			if world[h][w] == 255 && (live < 2 || live > 3) {
-				world2[h][w] = 0
+				res[h][w] = 0
 			} else if world[h][w] == 0 && live == 3 {
-				world2[h][w] = 255
+				res[h][w] = 255
 			} else {
-				world2[h][w] = world[h][w]
+				res[h][w] = world[h][w]
 			}
 		}
 	}
-	return world2
 }
 
 func calculateNextStateForWorker(slice [][]uint8, resChan chan<- [][]uint8) {
@@ -159,13 +153,14 @@ func calculateAliveCellsCount(p Params, world [][]uint8) int {
 	return alive
 }
 
-func startWorkers(p Params, world [][]uint8) [][]uint8 {
+func startWorkers(p Params, world [][]uint8, res [][]uint8) {
 	threads := p.Threads
 	height := p.ImageHeight
-	width := p.ImageWidth
+	// width := p.ImageWidth
 
 	if threads == 1 {
-		return calculateNextState(p, world)
+		calculateNextState(p, world, res)
+		return
 	}
 
 	resultsArr := make([]chan [][]uint8, threads)
@@ -222,10 +217,6 @@ func startWorkers(p Params, world [][]uint8) [][]uint8 {
 		}
 	}
 
-	res := make([][]uint8, height)
-	for i := 0; i < height; i++ {
-		res[i] = make([]uint8, width)
-	}
 	{
 		idx := 0
 		for i := 0; i < threads; i++ {
@@ -240,7 +231,6 @@ func startWorkers(p Params, world [][]uint8) [][]uint8 {
 			panic("internal error")
 		}
 	}
-	return res
 }
 
 func outputWorker(p Params, c distributorChannels, world [][]uint8) {
@@ -255,10 +245,14 @@ func outputWorker(p Params, c distributorChannels, world [][]uint8) {
 func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	world := make([][]uint8, p.ImageHeight)
+	world2 := make([][]uint8, p.ImageHeight)
 	for i := 0; i < p.ImageHeight; i++ {
 		world[i] = make([]uint8, p.ImageWidth)
+		world2[i] = make([]uint8, p.ImageWidth)
 		for j := 0; j < p.ImageWidth; j++ {
+			// TODO check if world2 values are default initialized to zero
 			world[i][j] = <-c.ioInput
+			world2[i][j] = 0
 		}
 	}
 
@@ -338,7 +332,14 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 				c.events <- AliveCellsCount{i, calculateAliveCellsCount(p, world)}
 			default:
 				if !paused {
-					world = startWorkers(p, world)
+					startWorkers(p, world, world2)
+
+					// TODO check if this makes a copy
+					// if it does make a copy, change it
+					tmp := world2
+					world2 = world
+					world = tmp
+
 					i++
 				}
 			}
