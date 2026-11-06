@@ -2,6 +2,7 @@ package gol
 
 import (
 	"strconv"
+	"uk.ac.bris.cs/gameoflife/util"
 )
 
 // Params provides the details of how to run the Game of Life and which image to load.
@@ -10,6 +11,27 @@ type Params struct {
 	Threads     int
 	ImageWidth  int
 	ImageHeight int
+}
+
+func distributeWithDoubleBuffer(p Params, c distributorChannels, keyPresses <-chan rune) {
+
+	world2 := make2DSlice(p.ImageWidth, p.ImageHeight)
+	doubleBufferTurnFn := func(p Params, world *[][]uint8) {
+		startWorkersDoubleBuffer(p, *world, world2)
+
+		*world, world2 = world2, *world
+	}
+
+	distributor(p, c, keyPresses, doubleBufferTurnFn)
+}
+func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan rune) {
+	cellsFlippedBuffer := make([]util.Cell, 0)
+	mapReduceTurnFn := func(p Params, world *[][]uint8) {
+		size := 0
+		startWorkersMapReduce(p, *world, &cellsFlippedBuffer, &size)
+	}
+
+	distributor(p, c, keyPresses, mapReduceTurnFn)
 }
 
 // Run starts the processing of Game of Life. It should initialise channels and goroutines.
@@ -46,12 +68,7 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioCommandChan <- ioInput
 	ioFilenameChan <- fileName
 
-	world2 := make2DSlice(p.ImageWidth, p.ImageHeight)
-	turnFn := func(p Params, world *[][]uint8) {
-		startWorkers(p, *world, world2)
-
-		*world, world2 = world2, *world
-	}
-
-	distributor(p, distributorChannels, keyPresses, turnFn)
+	// TODO uncomment the preferred function below (and comment out the rest)
+	distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
+	// distributeWithMapReduce(p, distributorChannels, keyPresses)
 }

@@ -27,42 +27,79 @@ func modulo(b int, m int) int {
 	}
 }
 
-func calculateNextState(p Params, world [][]uint8, res [][]uint8) {
+func calculateAdjacentLiveCellCount(w int, h int, W int, H int, world [][]uint8) int {
+	live := 0
+	// vert + horiz
+	if world[h][modulo(w+1, W)] == 255 {
+		live++
+	}
+	if world[h][modulo(w-1, W)] == 255 {
+		live++
+	}
+	if world[modulo(h+1, H)][w] == 255 {
+		live++
+	}
+	if world[modulo(h-1, H)][w] == 255 {
+		live++
+	}
 
+	//diag adj
+	if world[modulo(h+1, H)][modulo(w+1, W)] == 255 {
+		live++
+	}
+	if world[modulo(h+1, H)][modulo(w-1, W)] == 255 {
+		live++
+	}
+	if world[modulo(h-1, H)][modulo(w+1, W)] == 255 {
+		live++
+	}
+	if world[modulo(h-1, H)][modulo(w-1, W)] == 255 {
+		live++
+	}
+
+	return live
+}
+
+// this differs to the above function as the input slice has an extra row at the top and bottom of the actual slice to be modified
+func calculateAdjacentLiveCellCountForWorker(w int, h int, sliceWidth int, slice [][]uint8) int {
+	live := 0
+	// vert + horiz
+	if slice[h][modulo(w+1, sliceWidth)] == 255 {
+		live++
+	}
+	if slice[h][modulo(w-1, sliceWidth)] == 255 {
+		live++
+	}
+	if slice[h+1][w] == 255 {
+		live++
+	}
+	if slice[h-1][w] == 255 {
+		live++
+	}
+
+	//diag adj
+	if slice[h+1][modulo(w+1, sliceWidth)] == 255 {
+		live++
+	}
+	if slice[h+1][modulo(w-1, sliceWidth)] == 255 {
+		live++
+	}
+	if slice[h-1][modulo(w+1, sliceWidth)] == 255 {
+		live++
+	}
+	if slice[h-1][modulo(w-1, sliceWidth)] == 255 {
+		live++
+	}
+	return live
+}
+
+func calculateNextState(p Params, world [][]uint8, res [][]uint8) {
 	H := p.ImageHeight
 	W := p.ImageWidth
 
 	for h := 0; h < H; h++ {
 		for w := 0; w < W; w++ {
-			live := 0
-			// vert + horiz
-			if world[h][modulo(w+1, W)] == 255 {
-				live++
-			}
-			if world[h][modulo(w-1, W)] == 255 {
-				live++
-			}
-			if world[modulo(h+1, H)][w] == 255 {
-				live++
-			}
-			if world[modulo(h-1, H)][w] == 255 {
-				live++
-			}
-
-			//diag adj
-			if world[modulo(h+1, H)][modulo(w+1, W)] == 255 {
-				live++
-			}
-			if world[modulo(h+1, H)][modulo(w-1, W)] == 255 {
-				live++
-			}
-			if world[modulo(h-1, H)][modulo(w+1, W)] == 255 {
-				live++
-			}
-			if world[modulo(h-1, H)][modulo(w-1, W)] == 255 {
-				live++
-			}
-
+			live := calculateAdjacentLiveCellCount(w, h, W, H, world)
 			if world[h][w] == 255 && (live < 2 || live > 3) {
 				res[h][w] = 0
 			} else if world[h][w] == 0 && live == 3 {
@@ -73,10 +110,35 @@ func calculateNextState(p Params, world [][]uint8, res [][]uint8) {
 		}
 	}
 }
+func calculateNextStateMapReduce(p Params, world [][]uint8) {
+	H := p.ImageHeight
+	W := p.ImageWidth
 
-func calculateNextStateForWorker(slice [][]uint8, resChan chan<- [][]uint8) {
+	// just a starting point ig
+	cellsFlipped := make([]util.Cell, 0)
+
+	for h := 0; h < H; h++ {
+		for w := 0; w < W; w++ {
+			live := calculateAdjacentLiveCellCount(w, h, W, H, world)
+			if world[h][w] == 255 && (live < 2 || live > 3) {
+				cellsFlipped = append(cellsFlipped, util.Cell{X: w, Y: h})
+			} else if world[h][w] == 0 && live == 3 {
+				cellsFlipped = append(cellsFlipped, util.Cell{X: w, Y: h})
+			}
+		}
+	}
+
+	for _, cell := range cellsFlipped {
+		world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]
+	}
+}
+
+func calculateResultSliceForWorker(slice [][]uint8) [][]uint8 {
 
 	sliceHeight := len(slice)
+
+	// should be equal to the width of the overall grid, but i dont wanna change the variable :(
+	// TODO maybe use the ImageWidth from Params for sliceWidth
 	sliceWidth := len(slice[0])
 
 	hBegin := 1
@@ -89,35 +151,7 @@ func calculateNextStateForWorker(slice [][]uint8, resChan chan<- [][]uint8) {
 
 	for h := hBegin; h < hEnd; h++ {
 		for w := 0; w < sliceWidth; w++ {
-			live := 0
-			// vert + horiz
-			if slice[h][modulo(w+1, sliceWidth)] == 255 {
-				live++
-			}
-			if slice[h][modulo(w-1, sliceWidth)] == 255 {
-				live++
-			}
-			if slice[h+1][w] == 255 {
-				live++
-			}
-			if slice[h-1][w] == 255 {
-				live++
-			}
-
-			//diag adj
-			if slice[h+1][modulo(w+1, sliceWidth)] == 255 {
-				live++
-			}
-			if slice[h+1][modulo(w-1, sliceWidth)] == 255 {
-				live++
-			}
-			if slice[h-1][modulo(w+1, sliceWidth)] == 255 {
-				live++
-			}
-			if slice[h-1][modulo(w-1, sliceWidth)] == 255 {
-				live++
-			}
-
+			live := calculateAdjacentLiveCellCountForWorker(w, h, sliceWidth, slice)
 			if slice[h][w] == 255 && (live < 2 || live > 3) {
 				slice2[h-1][w] = 0
 			} else if slice[h][w] == 0 && live == 3 {
@@ -127,7 +161,31 @@ func calculateNextStateForWorker(slice [][]uint8, resChan chan<- [][]uint8) {
 			}
 		}
 	}
-	resChan <- slice2
+	return slice2
+}
+func calculateFlippedCellsForWorkerMapReduce(slice [][]uint8, startY int) []util.Cell {
+	sliceHeight := len(slice)
+
+	// should be equal to the width of the overall grid, but i dont wanna change the variable :(
+	// TODO maybe use the ImageWidth from Params for sliceWidth
+	sliceWidth := len(slice[0])
+
+	hBegin := 1
+	hEnd := sliceHeight - 1
+
+	cellsFlipped := make([]util.Cell, 0)
+
+	for h := hBegin; h < hEnd; h++ {
+		for w := 0; w < sliceWidth; w++ {
+			live := calculateAdjacentLiveCellCountForWorker(w, h, sliceWidth, slice)
+			if slice[h][w] == 255 && (live < 2 || live > 3) {
+				cellsFlipped = append(cellsFlipped, util.Cell{X: w, Y: startY + h - 1})
+			} else if slice[h][w] == 0 && live == 3 {
+				cellsFlipped = append(cellsFlipped, util.Cell{X: w, Y: startY + h - 1})
+			}
+		}
+	}
+	return cellsFlipped
 }
 
 func calculateAliveCells(p Params, world [][]uint8) []util.Cell {
@@ -153,7 +211,7 @@ func calculateAliveCellsCount(p Params, world [][]uint8) int {
 	return alive
 }
 
-func startWorkers(p Params, world [][]uint8, res [][]uint8) {
+func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8) {
 	threads := p.Threads
 	height := p.ImageHeight
 	// width := p.ImageWidth
@@ -165,9 +223,12 @@ func startWorkers(p Params, world [][]uint8, res [][]uint8) {
 
 	resultsArr := make([]chan [][]uint8, threads)
 	for i := 0; i < threads; i++ {
-		resultsArr[i] = make(chan [][]uint8)
+		resultsArr[i] = make(chan [][]uint8, 1)
 	}
 	{
+		worker := func(slice [][]uint8, resChan chan [][]uint8) {
+			resChan <- calculateResultSliceForWorker(slice)
+		}
 		step := height / threads
 		stepRemain := height % threads
 
@@ -183,17 +244,17 @@ func startWorkers(p Params, world [][]uint8, res [][]uint8) {
 				for i := 0; i < last-first+1; i++ {
 					slice[i+1] = world[i]
 				}
-				go calculateNextStateForWorker(slice, resultsArr[idx])
+				go worker(slice, resultsArr[idx])
 			} else if last == height {
 				slice := make([][]uint8, last-first+2)
 				slice[last-first+1] = world[0]
 				for i := 0; i < last-first+1; i++ {
 					slice[i] = world[first-1+i]
 				}
-				go calculateNextStateForWorker(slice, resultsArr[idx])
+				go worker(slice, resultsArr[idx])
 			} else {
 				slice := world[first-1 : last+1]
-				go calculateNextStateForWorker(slice, resultsArr[idx])
+				go worker(slice, resultsArr[idx])
 			}
 
 			nextStep := step
@@ -233,6 +294,116 @@ func startWorkers(p Params, world [][]uint8, res [][]uint8) {
 	}
 }
 
+func sizedAppend(slice *[]util.Cell, sizeP *int, val util.Cell) {
+	if *sizeP == len(*slice) {
+		*slice = append(*slice, val)
+	} else {
+		(*slice)[*sizeP] = val
+	}
+	(*sizeP)++
+}
+
+func startWorkersMapReduce(p Params, world [][]uint8, cellsFlipped *[]util.Cell, sizeP *int) {
+	threads := p.Threads
+	height := p.ImageHeight
+	// width := p.ImageWidth
+
+	channelBufferSize := 10
+
+	if threads == 1 {
+		calculateNextStateMapReduce(p, world)
+	} else {
+
+		cellFlippedChan := make(chan util.Cell, channelBufferSize)
+		var wg sync.WaitGroup
+		{
+			step := height / threads
+			stepRemain := height % threads
+
+			idx := 0
+			first := 0
+			last := first + step
+
+			lastStep := step
+
+			makeWorker := func(startY int, slice [][]uint8, resChan chan util.Cell) func() {
+				return func() {
+					cs := calculateFlippedCellsForWorkerMapReduce(slice, startY)
+					for i := 0; i < len(cs); i++ {
+						resChan <- cs[i]
+					}
+				}
+			}
+
+			for idx < threads {
+				if first == 0 {
+					slice := make([][]uint8, last-first+2)
+					slice[0] = world[height-1]
+					for i := 0; i < last-first+1; i++ {
+						slice[i+1] = world[i]
+					}
+					wg.Go(makeWorker(first, slice, cellFlippedChan))
+				} else if last == height {
+					slice := make([][]uint8, last-first+2)
+					slice[last-first+1] = world[0]
+					for i := 0; i < last-first+1; i++ {
+						slice[i] = world[first-1+i]
+					}
+					wg.Go(makeWorker(first, slice, cellFlippedChan))
+				} else {
+					slice := world[first-1 : last+1]
+					wg.Go(makeWorker(first, slice, cellFlippedChan))
+				}
+
+				nextStep := step
+				if stepRemain != 0 {
+					nextStep++
+					stepRemain--
+				}
+				first += lastStep
+				last += nextStep
+
+				lastStep = nextStep
+
+				idx++
+				if last > height {
+					last = height
+				}
+			}
+			if first < height || idx != threads {
+				fmt.Println("log: ", first, last, height, idx, threads)
+				panic("internal error")
+			}
+		}
+
+		doneSig := make(chan bool)
+		go func() {
+			wg.Wait()
+			doneSig <- true
+			close(cellFlippedChan)
+		}()
+
+		{
+			contLoop := true
+			for contLoop {
+				select {
+				case cell := <-cellFlippedChan:
+					sizedAppend(cellsFlipped, sizeP, cell)
+				case <-doneSig:
+					contLoop = false
+				}
+			}
+			for cell := range cellFlippedChan {
+				sizedAppend(cellsFlipped, sizeP, cell)
+			}
+			for i := 0; i < *sizeP; i++ {
+				cell := (*cellsFlipped)[i]
+				world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]
+			}
+		}
+	}
+}
+
 func outputWorker(p Params, c distributorChannels, world [][]uint8) {
 	for i := 0; i < p.ImageHeight; i++ {
 		for j := 0; j < p.ImageWidth; j++ {
@@ -257,11 +428,11 @@ func populateWorld(world [][]uint8, x int, y int, c distributorChannels) {
 	}
 }
 
-func quitFilenameFn(x int, y int, turnsDone int) string {
+func distributorQuitFilenameFn(x int, y int, turnsDone int) string {
 	return strconv.Itoa(x) + "x" + strconv.Itoa(y) + "x" + strconv.Itoa(turnsDone)
 }
 
-func exitFn(p Params, c distributorChannels, world [][]uint8, turnsDone int, filename string) {
+func distributorExitFn(p Params, c distributorChannels, world [][]uint8, turnsDone int, filename string) {
 	c.events <- FinalTurnComplete{p.Turns, calculateAliveCells(p, world)}
 	c.ioCommand <- ioOutput
 	c.ioFilename <- filename
@@ -277,7 +448,7 @@ func exitFn(p Params, c distributorChannels, world [][]uint8, turnsDone int, fil
 	c.events <- StateChange{p.Turns, Quitting}
 }
 
-func defaultExitFilenameFn(p Params) string {
+func distributorDefaultExitFilenameFn(p Params) string {
 	defaultExitFilename := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
 	if p.Turns == 100 {
 		defaultExitFilename += "x100"
@@ -326,10 +497,10 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 					c.events <- StateChange{i, Paused}
 				}
 			case _ = <-finishCmdSig:
-				exitFn(p, c, world, i, quitFilenameFn(p.ImageWidth, p.ImageHeight, i))
+				distributorExitFn(p, c, world, i, distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, i))
 				contLoop = false
 			case _ = <-saveCmdSig:
-				filename := quitFilenameFn(p.ImageWidth, p.ImageHeight, i)
+				filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, i)
 
 				c.ioCommand <- ioOutput
 				c.ioFilename <- filename
@@ -384,7 +555,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 	wg.Wait()
 
 	if !quitFlag {
-		exitFn(p, c, world, p.Turns, defaultExitFilenameFn(p))
+		distributorExitFn(p, c, world, p.Turns, distributorDefaultExitFilenameFn(p))
 	}
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 	close(c.events)
