@@ -46,5 +46,12 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioCommandChan <- ioInput
 	ioFilenameChan <- fileName
 
-	distributorDoubleBuffer(p, distributorChannels, keyPresses)
+	world2 := make2DSlice(p.ImageWidth, p.ImageHeight)
+	turnFn := func(p Params, world *[][]uint8) {
+		startWorkers(p, *world, world2)
+
+		*world, world2 = world2, *world
+	}
+
+	distributor(p, distributorChannels, keyPresses, turnFn)
 }

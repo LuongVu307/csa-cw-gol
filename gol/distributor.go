@@ -244,7 +244,7 @@ func outputWorker(p Params, c distributorChannels, world [][]uint8) {
 func make2DSlice(x int, y int) [][]uint8 {
 	res := make([][]uint8, y)
 	for i := 0; i < y; i++ {
-		res[y] = make([]uint8, x)
+		res[i] = make([]uint8, x)
 	}
 	return res
 }
@@ -290,11 +290,10 @@ func defaultExitFilenameFn(p Params) string {
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
-func distributorDoubleBuffer(p Params, c distributorChannels, keyPresses <-chan rune) {
+func distributor(p Params, c distributorChannels, keyPresses <-chan rune, completeTurn func(p Params, world *[][]uint8)) {
 
 	world := make2DSlice(p.ImageWidth, p.ImageHeight)
 	populateWorld(world, p.ImageWidth, p.ImageHeight, c)
-	world2 := make2DSlice(p.ImageWidth, p.ImageHeight)
 
 	doneSig := make(chan bool)
 	pauseUnpauseCmdSig := make(chan bool)
@@ -344,13 +343,8 @@ func distributorDoubleBuffer(p Params, c distributorChannels, keyPresses <-chan 
 				c.events <- AliveCellsCount{i, calculateAliveCellsCount(p, world)}
 			default:
 				if !paused {
-					startWorkers(p, world, world2)
-
-					// TODO check if this makes a copy
-					// if it does make a copy, change it
-					tmp := world2
-					world2 = world
-					world = tmp
+					// startWorkers(p, world, world2)
+					completeTurn(p, &world)
 
 					i++
 				}
