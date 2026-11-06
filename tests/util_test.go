@@ -74,7 +74,6 @@ func emptyOutFolder() {
 }
 
 func readAliveCells(t *testing.T, path string, width, height int) []util.Cell {
-	fmt.Println("file: ", path)
 	data, ioError := os.ReadFile(path)
 	if ioError != nil {
 		t.Fatalf("%v %v", util.Red("ERROR"), ioError)
