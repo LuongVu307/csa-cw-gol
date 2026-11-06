@@ -80,7 +80,7 @@ func calculateNextState(p Params, world [][]uint8) [][]uint8 {
 	return world2
 }
 
-func calculateNextStateForWorker(p Params, slice [][]uint8, resChan chan<- [][]uint8, idx int) {
+func calculateNextStateForWorker(slice [][]uint8, resChan chan<- [][]uint8) {
 
 	sliceHeight := len(slice)
 	sliceWidth := len(slice[0])
@@ -188,17 +188,17 @@ func startWorkers(p Params, world [][]uint8) [][]uint8 {
 				for i := 0; i < last-first+1; i++ {
 					slice[i+1] = world[i]
 				}
-				go calculateNextStateForWorker(p, slice, resultsArr[idx], idx)
+				go calculateNextStateForWorker(slice, resultsArr[idx])
 			} else if last == height {
 				slice := make([][]uint8, last-first+2)
 				slice[last-first+1] = world[0]
 				for i := 0; i < last-first+1; i++ {
 					slice[i] = world[first-1+i]
 				}
-				go calculateNextStateForWorker(p, slice, resultsArr[idx], idx)
+				go calculateNextStateForWorker(slice, resultsArr[idx])
 			} else {
 				slice := world[first-1 : last+1]
-				go calculateNextStateForWorker(p, slice, resultsArr[idx], idx)
+				go calculateNextStateForWorker(slice, resultsArr[idx])
 			}
 
 			nextStep := step
