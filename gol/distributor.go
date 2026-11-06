@@ -2,8 +2,8 @@ package gol
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"uk.ac.bris.cs/gameoflife/util"
@@ -262,92 +262,123 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 	}
 
+	defaultExitFilename := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
+	if p.Turns == 100 {
+		defaultExitFilename += "x100"
+	} else if p.Turns == 0 {
+		defaultExitFilename += "x0"
+	} else {
+		defaultExitFilename += "x" + strconv.Itoa(p.Threads)
+	}
+
+	quitFilenameFn := func(turnsDone int) string {
+		return strconv.Itoa(p.ImageHeight) + "x" + strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(turnsDone)
+	}
+	exitFn := func(turnsDone int, filename string) {
+		c.events <- FinalTurnComplete{p.Turns, calculateAliveCells(p, world)}
+		c.ioCommand <- ioOutput
+		c.ioFilename <- filename
+		// no point in using "go" keyword, the current goroutine will anyways block until IO is done
+		outputWorker(p, c, world)
+
+		// Make sure that the Io has finished any output before exiting.
+		c.ioCommand <- ioCheckIdle
+		<-c.ioIdle
+
+		c.events <- ImageOutputComplete{turnsDone, filename}
+
+		c.events <- StateChange{p.Turns, Quitting}
+	}
+
+	doneSig := make(chan bool)
+	pauseUnpauseCmdSig := make(chan bool)
+	finishCmdSig := make(chan bool)
+	saveCmdSig := make(chan bool)
+
+	loopFn := func() {
+		ticker := time.NewTicker(2 * time.Second)
+		i := 0
+		contLoop := true
+		paused := false
+
+		for {
+			if i == p.Turns {
+				doneSig <- true
+				break
+			} else if !contLoop {
+				break
+			}
+
+			select {
+			case _ = <-pauseUnpauseCmdSig:
+				if paused {
+					// unpause
+					paused = false
+					c.events <- StateChange{i, Executing}
+				} else {
+					// pause
+					paused = true
+					c.events <- StateChange{i, Paused}
+				}
+			case _ = <-finishCmdSig:
+				exitFn(i, quitFilenameFn(i))
+				contLoop = false
+			case _ = <-saveCmdSig:
+				filename := quitFilenameFn(i)
+
+				c.ioCommand <- ioOutput
+				c.ioFilename <- filename
+				outputWorker(p, c, world)
+
+				c.ioCommand <- ioCheckIdle
+				<-c.ioIdle
+
+				c.events <- ImageOutputComplete{i, filename}
+			case _ = <-ticker.C:
+				c.events <- AliveCellsCount{i, calculateAliveCellsCount(p, world)}
+			default:
+				if !paused {
+					world = startWorkers(p, world)
+					i++
+				}
+			}
+
+		}
+	}
+	var wg sync.WaitGroup
+	wg.Go(loopFn)
+
 	c.events <- StateChange{0, Executing}
 
-	// these are effectively binary semaphores
-	doneSig := make(chan bool)
-	incSig := make(chan bool)
-
-	curTurn := 0
-	var worldMtx sync.Mutex
-
-	endFg := int32(0)
-	pauseFg := int32(0)
-	go func() {
-		for i := 0; i < p.Turns && atomic.LoadInt32(&endFg) == 0; i++ {
-			for atomic.LoadInt32(&pauseFg)
-			worldMtx.Lock()
-			world = startWorkers(p, world)
-			worldMtx.Unlock()
-			incSig <- true
-		}
-		doneSig <- true
-	}()
-
-	timer := time.NewTicker(2 * time.Second)
-
 	contSelect := true
+	quitFlag := false
 	for contSelect {
 		select {
-		case <-incSig:
-			{
-				curTurn++
-			}
 		case <-doneSig:
 			{
 				contSelect = false
-
-			}
-		case <-timer.C:
-			{
-				worldMtx.Lock()
-				c.events <- AliveCellsCount{curTurn, calculateAliveCellsCount(p, world)}
-				worldMtx.Unlock()
-
 			}
 		case key := <-keyPresses:
 			{
 				switch key {
 				case 's':
-					{
-						worldMtx.Lock()
-						outputWorker(p, c, world)
-						worldMtx.Unlock()
-
-						// c.ioCommand <- ioCheckIdle
-						// <-c.ioIdle
-
-						c.events <- ImageOutputComplete{curTurn, "dummyfile"}
-					}
+					saveCmdSig <- true
 				case 'q':
-					{
-						contSelect = false
-						atomic.StoreInt32(&endFg, int32(0))
-					}
+					finishCmdSig <- true
+					// other thread is responsible for calling exitFn
+					quitFlag = true
+					contSelect = false
 				case 'p':
-					{
-						// TODO pause
-					}
+					pauseUnpauseCmdSig <- true
 				}
 			}
 		}
 	}
+	wg.Wait()
 
-	c.events <- FinalTurnComplete{p.Turns, calculateAliveCells(p, world)}
-	c.ioCommand <- ioOutput
-	// no point in using "go" keyword, the current goroutine will already block until IO is done
-	outputWorker(p, c, world)
-
-	// Make sure that the Io has finished any output before exiting.
-	c.ioCommand <- ioCheckIdle
-	<-c.ioIdle
-
-	if p.Threads == 1 && p.ImageHeight <= 64 {
-		fmt.Println("DISTRIBUTOR OUTPUT: \n", util.AliveCellsToString(calculateAliveCells(p, world), calculateAliveCells(p, world), p.ImageWidth, p.ImageHeight))
+	if !quitFlag {
+		exitFn(p.Turns, defaultExitFilename)
 	}
-
-	c.events <- StateChange{p.Turns, Quitting}
-
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 	close(c.events)
 }

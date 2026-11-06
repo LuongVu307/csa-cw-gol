@@ -10,6 +10,7 @@ import (
 
 // TestGol tests 16x16, 64x64 and 512x512 images on 0, 1 and 100 turns using 1-16 worker threads.
 func TestGol(t *testing.T) {
+	fmt.Println("gol test started")
 	tests := []gol.Params{
 		{ImageWidth: 16, ImageHeight: 16},
 		{ImageWidth: 64, ImageHeight: 64},
