@@ -211,7 +211,9 @@ func calculateAliveCellsCount(p Params, world [][]uint8) int {
 	return alive
 }
 
-func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8) {
+// the "worker" parameter takes in a slice with an extra row on the top and bottom,
+// which returns the slice WITHOUT the extra rows
+func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8, worker func(slice [][]uint8, resChan chan [][]uint8)) {
 	threads := p.Threads
 	height := p.ImageHeight
 	// width := p.ImageWidth
@@ -226,9 +228,9 @@ func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8) {
 		resultsArr[i] = make(chan [][]uint8, 1)
 	}
 	{
-		worker := func(slice [][]uint8, resChan chan [][]uint8) {
-			resChan <- calculateResultSliceForWorker(slice)
-		}
+		// worker := func(slice [][]uint8, resChan chan [][]uint8) {
+		// 	resChan <- calculateResultSliceForWorker(slice)
+		// }
 		step := height / threads
 		stepRemain := height % threads
 
@@ -303,7 +305,7 @@ func sizedAppend(slice *[]util.Cell, sizeP *int, val util.Cell) {
 	(*sizeP)++
 }
 
-func startWorkersMapReduce(p Params, world [][]uint8, cellsFlipped *[]util.Cell, sizeP *int) {
+func startWorkersMapReduce(p Params, world [][]uint8, worker func(startY int, slice [][]uint8, resChan chan util.Cell), cellsFlipped *[]util.Cell, sizeP *int) {
 	threads := p.Threads
 	height := p.ImageHeight
 	// width := p.ImageWidth
@@ -328,11 +330,14 @@ func startWorkersMapReduce(p Params, world [][]uint8, cellsFlipped *[]util.Cell,
 
 			makeWorker := func(startY int, slice [][]uint8, resChan chan util.Cell) func() {
 				return func() {
-					cs := calculateFlippedCellsForWorkerMapReduce(slice, startY)
-					for i := 0; i < len(cs); i++ {
-						resChan <- cs[i]
-					}
+					worker(startY, slice, resChan)
 				}
+				// return func() {
+				// 	cs := calculateFlippedCellsForWorkerMapReduce(slice, startY)
+				// 	for i := 0; i < len(cs); i++ {
+				// 		resChan <- cs[i]
+				// 	}
+				// }
 			}
 
 			for idx < threads {

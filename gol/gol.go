@@ -13,11 +13,22 @@ type Params struct {
 	ImageHeight int
 }
 
+func defaultWorker(slice [][]uint8, resChan chan [][]uint8) {
+	resChan <- calculateResultSliceForWorker(slice)
+}
+
+func mapReduceDefaultWorker(startY int, slice [][]uint8, resChan chan util.Cell) {
+	cs := calculateFlippedCellsForWorkerMapReduce(slice, startY)
+	for i := 0; i < len(cs); i++ {
+		resChan <- cs[i]
+	}
+}
+
 func distributeWithDoubleBuffer(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	world2 := make2DSlice(p.ImageWidth, p.ImageHeight)
 	doubleBufferTurnFn := func(p Params, world *[][]uint8) {
-		startWorkersDoubleBuffer(p, *world, world2)
+		startWorkersDoubleBuffer(p, *world, world2, defaultWorker)
 
 		*world, world2 = world2, *world
 	}
@@ -28,7 +39,7 @@ func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan 
 	cellsFlippedBuffer := make([]util.Cell, 0)
 	mapReduceTurnFn := func(p Params, world *[][]uint8) {
 		size := 0
-		startWorkersMapReduce(p, *world, &cellsFlippedBuffer, &size)
+		startWorkersMapReduce(p, *world, mapReduceDefaultWorker, &cellsFlippedBuffer, &size)
 	}
 
 	distributor(p, c, keyPresses, mapReduceTurnFn)
@@ -69,6 +80,6 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioFilenameChan <- fileName
 
 	// TODO uncomment the preferred function below (and comment out the rest)
-	distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
+	distributeWithMapReduce(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)
 }
