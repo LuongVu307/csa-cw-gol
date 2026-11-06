@@ -46,5 +46,5 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioCommandChan <- ioInput
 	ioFilenameChan <- fileName
 
-	distributor(p, distributorChannels, keyPresses)
+	distributorDoubleBuffer(p, distributorChannels, keyPresses)
 }

@@ -241,21 +241,43 @@ func outputWorker(p Params, c distributorChannels, world [][]uint8) {
 	}
 }
 
-// distributor divides the work between workers and interacts with other goroutines.
-func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
+func make2DSlice(x int, y int) [][]uint8 {
+	res := make([][]uint8, y)
+	for i := 0; i < y; i++ {
+		res[y] = make([]uint8, x)
+	}
+	return res
+}
 
-	world := make([][]uint8, p.ImageHeight)
-	world2 := make([][]uint8, p.ImageHeight)
-	for i := 0; i < p.ImageHeight; i++ {
-		world[i] = make([]uint8, p.ImageWidth)
-		world2[i] = make([]uint8, p.ImageWidth)
-		for j := 0; j < p.ImageWidth; j++ {
-			// TODO check if world2 values are default initialized to zero
+func populateWorld(world [][]uint8, x int, y int, c distributorChannels) {
+	for i := 0; i < y; i++ {
+		for j := 0; j < x; j++ {
 			world[i][j] = <-c.ioInput
-			world2[i][j] = 0
 		}
 	}
+}
 
+func quitFilenameFn(x int, y int, turnsDone int) string {
+	return strconv.Itoa(x) + "x" + strconv.Itoa(y) + "x" + strconv.Itoa(turnsDone)
+}
+
+func exitFn(p Params, c distributorChannels, world [][]uint8, turnsDone int, filename string) {
+	c.events <- FinalTurnComplete{p.Turns, calculateAliveCells(p, world)}
+	c.ioCommand <- ioOutput
+	c.ioFilename <- filename
+	// no point in using "go" keyword, the current goroutine will anyways block until IO is done
+	outputWorker(p, c, world)
+
+	// Make sure that the Io has finished any output before exiting.
+	c.ioCommand <- ioCheckIdle
+	<-c.ioIdle
+
+	c.events <- ImageOutputComplete{turnsDone, filename}
+
+	c.events <- StateChange{p.Turns, Quitting}
+}
+
+func defaultExitFilenameFn(p Params) string {
 	defaultExitFilename := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
 	if p.Turns == 100 {
 		defaultExitFilename += "x100"
@@ -264,25 +286,15 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 	} else {
 		defaultExitFilename += "x" + strconv.Itoa(p.Threads)
 	}
+	return defaultExitFilename
+}
 
-	quitFilenameFn := func(turnsDone int) string {
-		return strconv.Itoa(p.ImageHeight) + "x" + strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(turnsDone)
-	}
-	exitFn := func(turnsDone int, filename string) {
-		c.events <- FinalTurnComplete{p.Turns, calculateAliveCells(p, world)}
-		c.ioCommand <- ioOutput
-		c.ioFilename <- filename
-		// no point in using "go" keyword, the current goroutine will anyways block until IO is done
-		outputWorker(p, c, world)
+// distributor divides the work between workers and interacts with other goroutines.
+func distributorDoubleBuffer(p Params, c distributorChannels, keyPresses <-chan rune) {
 
-		// Make sure that the Io has finished any output before exiting.
-		c.ioCommand <- ioCheckIdle
-		<-c.ioIdle
-
-		c.events <- ImageOutputComplete{turnsDone, filename}
-
-		c.events <- StateChange{p.Turns, Quitting}
-	}
+	world := make2DSlice(p.ImageWidth, p.ImageHeight)
+	populateWorld(world, p.ImageWidth, p.ImageHeight, c)
+	world2 := make2DSlice(p.ImageWidth, p.ImageHeight)
 
 	doneSig := make(chan bool)
 	pauseUnpauseCmdSig := make(chan bool)
@@ -315,10 +327,10 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 					c.events <- StateChange{i, Paused}
 				}
 			case _ = <-finishCmdSig:
-				exitFn(i, quitFilenameFn(i))
+				exitFn(p, c, world, i, quitFilenameFn(p.ImageWidth, p.ImageHeight, i))
 				contLoop = false
 			case _ = <-saveCmdSig:
-				filename := quitFilenameFn(i)
+				filename := quitFilenameFn(p.ImageWidth, p.ImageHeight, i)
 
 				c.ioCommand <- ioOutput
 				c.ioFilename <- filename
@@ -378,7 +390,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 	wg.Wait()
 
 	if !quitFlag {
-		exitFn(p.Turns, defaultExitFilename)
+		exitFn(p, c, world, p.Turns, defaultExitFilenameFn(p))
 	}
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 	close(c.events)
