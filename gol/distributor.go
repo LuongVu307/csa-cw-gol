@@ -110,7 +110,7 @@ func calculateNextState(p Params, world [][]uint8, res [][]uint8) {
 		}
 	}
 }
-func calculateNextStateMapReduce(p Params, world [][]uint8) {
+func calculateCellsFlippedMapReduce(p Params, world [][]uint8) []util.Cell {
 	H := p.ImageHeight
 	W := p.ImageWidth
 
@@ -128,9 +128,7 @@ func calculateNextStateMapReduce(p Params, world [][]uint8) {
 		}
 	}
 
-	for _, cell := range cellsFlipped {
-		world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]
-	}
+	return cellsFlipped
 }
 
 func calculateResultSliceForWorker(slice [][]uint8) [][]uint8 {
@@ -212,17 +210,23 @@ func calculateAliveCellsCount(p Params, world [][]uint8) int {
 }
 
 // the "worker" parameter takes in a slice with an extra row on the top and bottom,
-// which returns the slice WITHOUT the extra rows
-func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8, worker func(slice [][]uint8, resChan chan [][]uint8)) {
+// which returns a result slice WITHOUT the extra rows.
+// the "worker1" parameter takes in "world" and writes to the "res" slice
+//
+// "worker1" is the worker that is used when p.Threads == 1
+// "worker" is the worker that is used when p.Threads > 1
+func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8,
+	worker1 func(p Params, world [][]uint8, res [][]uint8),
+	worker func(slice [][]uint8, resChan chan [][]uint8)) {
 	threads := p.Threads
 	height := p.ImageHeight
 	// width := p.ImageWidth
 
 	if threads == 1 {
-		calculateNextState(p, world, res)
-		return
-	}
+		// calculateNextState(p, world, res)
 
+		worker1(p, world, res)
+	}
 	resultsArr := make([]chan [][]uint8, threads)
 	for i := 0; i < threads; i++ {
 		resultsArr[i] = make(chan [][]uint8, 1)
@@ -305,7 +309,12 @@ func sizedAppend(slice *[]util.Cell, sizeP *int, val util.Cell) {
 	(*sizeP)++
 }
 
-func startWorkersMapReduce(p Params, world [][]uint8, worker func(startY int, slice [][]uint8, resChan chan util.Cell), cellsFlipped *[]util.Cell, sizeP *int) {
+// "worker1" is the worker that is used when p.Threads == 1
+// "worker" is the worker that is used when p.Threads > 1
+func startWorkersMapReduce(p Params, world [][]uint8,
+	worker1 func(p Params, slice [][]uint8) []util.Cell,
+	worker func(startY int, slice [][]uint8, resChan chan util.Cell),
+	cellsFlipped *[]util.Cell, sizeP *int) {
 	threads := p.Threads
 	height := p.ImageHeight
 	// width := p.ImageWidth
@@ -313,7 +322,13 @@ func startWorkersMapReduce(p Params, world [][]uint8, worker func(startY int, sl
 	channelBufferSize := 10
 
 	if threads == 1 {
-		calculateNextStateMapReduce(p, world)
+		// calculateNextStateMapReduce(p, world)
+
+		cs := worker1(p, world)
+		for i := 0; i < len(cs); i++ {
+			cell := cs[i]
+			world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]
+		}
 	} else {
 
 		cellFlippedChan := make(chan util.Cell, channelBufferSize)

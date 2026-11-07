@@ -13,33 +13,41 @@ type Params struct {
 	ImageHeight int
 }
 
+// FOR PARALLEL DOUBLE BUFFER
 func defaultWorker(slice [][]uint8, resChan chan [][]uint8) {
 	resChan <- calculateResultSliceForWorker(slice)
 }
-
-func mapReduceDefaultWorker(startY int, slice [][]uint8, resChan chan util.Cell) {
-	cs := calculateFlippedCellsForWorkerMapReduce(slice, startY)
-	for i := 0; i < len(cs); i++ {
-		resChan <- cs[i]
-	}
+func defaultWorkerSingleThread(p Params, world [][]uint8, res [][]uint8) {
+	calculateNextState(p, world, res)
 }
-
 func distributeWithDoubleBuffer(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	world2 := make2DSlice(p.ImageWidth, p.ImageHeight)
 	doubleBufferTurnFn := func(p Params, world *[][]uint8) {
-		startWorkersDoubleBuffer(p, *world, world2, defaultWorker)
+		startWorkersDoubleBuffer(p, *world, world2, defaultWorkerSingleThread, defaultWorker)
 
 		*world, world2 = world2, *world
 	}
 
 	distributor(p, c, keyPresses, doubleBufferTurnFn)
 }
+
+// FOR PARALLEL MAP REDUCE
+func mapReduceDefaultWorker(startY int, slice [][]uint8, resChan chan util.Cell) {
+	cs := calculateFlippedCellsForWorkerMapReduce(slice, startY)
+	for i := 0; i < len(cs); i++ {
+		resChan <- cs[i]
+	}
+}
+func mapReduceDefaultWorkerSingleThread(p Params, world [][]uint8) []util.Cell {
+	return calculateCellsFlippedMapReduce(p, world)
+}
 func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan rune) {
 	cellsFlippedBuffer := make([]util.Cell, 0)
 	mapReduceTurnFn := func(p Params, world *[][]uint8) {
 		size := 0
-		startWorkersMapReduce(p, *world, mapReduceDefaultWorker, &cellsFlippedBuffer, &size)
+
+		startWorkersMapReduce(p, *world, mapReduceDefaultWorkerSingleThread, mapReduceDefaultWorker, &cellsFlippedBuffer, &size)
 	}
 
 	distributor(p, c, keyPresses, mapReduceTurnFn)
