@@ -1,7 +1,13 @@
 package gol
 
 import (
+	"fmt"
+	"net/rpc"
+	"os"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -53,6 +59,119 @@ func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan 
 	distributor(p, c, keyPresses, mapReduceTurnFn)
 }
 
+// FOR DISTRIBUTED MAP REDUCE
+
+type BrokerArgs struct {
+	P     Params
+	World [][]uint8
+}
+
+type CompleteResult struct {
+	Turn int
+	Res  [][]uint8
+}
+type SaveResult struct {
+	Turn int
+	Res  [][]uint8
+}
+type QuitResult struct {
+	Turn int
+	Res  [][]uint8
+}
+type PauseUnpauseResult struct {
+	Turns   int
+	IsPause bool
+}
+type CellCountResult struct {
+	Turn  int
+	Count int
+}
+
+func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan rune) {
+	bytes, err := os.ReadFile("brokerURL.txt")
+	if err != nil {
+		panic("brokerURL.txt not found")
+	}
+	// theres some newline character in the filename, this just removes it
+	url := strings.ReplaceAll(string(bytes), "\n", "")
+	fmt.Println("Connecting to server at (", url, ")")
+	client, err := rpc.Dial("tcp", url)
+	fmt.Println("Attempted connection")
+	if err != nil {
+		panic("Failed to connect to broker")
+	} else {
+		fmt.Println("Connection successful")
+	}
+
+	world := make2DSlice(p.ImageWidth, p.ImageHeight)
+	populateWorld(world, p.ImageWidth, p.ImageHeight, c)
+
+	doneSig := make(chan bool, 1)
+	ticker := time.NewTicker(2 * time.Second)
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		contLoop := true
+		for contLoop {
+			select {
+			case <-ticker.C:
+				var res CellCountResult
+				client.Call("Broker.ProcessCellCount", 0, &res)
+				c.events <- AliveCellsCount{
+					CompletedTurns: res.Turn,
+					CellsCount:     res.Count,
+				}
+			case key := <-keyPresses:
+				switch key {
+				case 's':
+					var res SaveResult
+					client.Call("Broker.ProcessSave", 0, &res)
+					fmt.Println("Alive in save result: ", calculateAliveCellsCount(p, res.Res))
+					filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn)
+
+					c.ioCommand <- ioOutput
+					c.ioFilename <- filename
+					outputWorker(p, c, res.Res)
+
+					c.ioCommand <- ioCheckIdle
+					<-c.ioIdle
+
+					c.events <- ImageOutputComplete{res.Turn, filename}
+				case 'q':
+					var res QuitResult
+					client.Call("Broker.ProcessQuit", 0, &res)
+					distributorExitFn(p, c, res.Res, res.Turn, distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn))
+					<-doneSig
+					contLoop = false
+				case 'p':
+					var res PauseUnpauseResult
+					client.Call("Broker.ProcessPauseUnpause", 0, &res)
+					if res.IsPause {
+						c.events <- StateChange{res.Turns, Paused}
+					} else {
+						c.events <- StateChange{res.Turns, Executing}
+					}
+				}
+
+			case <-doneSig:
+				contLoop = false
+			}
+		}
+	})
+
+	c.events <- StateChange{0, Executing}
+	args := BrokerArgs{P: p, World: world}
+	var res CompleteResult
+	client.Call("Broker.ProcessConnection", args, &res)
+	doneSig <- true
+
+	wg.Wait()
+	if res.Res != nil {
+		distributorExitFn(p, c, res.Res, res.Turn, distributorDefaultExitFilenameFn(p))
+	}
+	close(c.events)
+}
+
 // Run starts the processing of Game of Life. It should initialise channels and goroutines.
 func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 
@@ -88,6 +207,7 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioFilenameChan <- fileName
 
 	// TODO uncomment the preferred function below (and comment out the rest)
-	distributeWithMapReduce(p, distributorChannels, keyPresses)
+	distributeWithBroker(p, distributorChannels, keyPresses)
+	// distributeWithMapReduce(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)
 }

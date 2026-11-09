@@ -466,6 +466,7 @@ func distributorExitFn(p Params, c distributorChannels, world [][]uint8, turnsDo
 	c.events <- ImageOutputComplete{turnsDone, filename}
 
 	c.events <- StateChange{p.Turns, Quitting}
+
 }
 
 func distributorDefaultExitFilenameFn(p Params) string {
@@ -516,7 +517,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 					paused = true
 					c.events <- StateChange{i, Paused}
 				}
-			case _ = <-finishCmdSig:
+			case <-finishCmdSig:
 				distributorExitFn(p, c, world, i, distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, i))
 				contLoop = false
 			case _ = <-saveCmdSig:
@@ -534,9 +535,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 				c.events <- AliveCellsCount{i, calculateAliveCellsCount(p, world)}
 			default:
 				if !paused {
-					// startWorkers(p, world, world2)
 					completeTurn(p, &world)
-
 					i++
 				}
 			}
