@@ -172,11 +172,7 @@ func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan run
 	close(c.events)
 }
 
-// Run starts the processing of Game of Life. It should initialise channels and goroutines.
 func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
-
-	//	TODO: Put the missing channels in here.
-
 	ioCommandChan := make(chan ioCommand)
 	ioIdleChan := make(chan bool)
 	ioFilenameChan := make(chan string)
