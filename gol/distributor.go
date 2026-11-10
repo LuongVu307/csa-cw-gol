@@ -455,7 +455,7 @@ func distributorQuitFilenameFn(x int, y int, turnsDone int) string {
 }
 
 func distributorExitFn(p Params, c distributorChannels, world [][]uint8, turnsDone int, filename string) {
-	c.events <- FinalTurnComplete{p.Turns, calculateAliveCells(p, world)}
+	c.events <- FinalTurnComplete{turnsDone, calculateAliveCells(p, world)}
 	c.ioCommand <- ioOutput
 	c.ioFilename <- filename
 	// no point in using "go" keyword, the current goroutine will anyways block until IO is done
@@ -467,7 +467,7 @@ func distributorExitFn(p Params, c distributorChannels, world [][]uint8, turnsDo
 
 	c.events <- ImageOutputComplete{turnsDone, filename}
 
-	c.events <- StateChange{p.Turns, Quitting}
+	c.events <- StateChange{turnsDone, Quitting}
 
 }
 
@@ -488,14 +488,14 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 
 	world := make2DSlice(p.ImageWidth, p.ImageHeight)
 	populateWorld(world, p.ImageWidth, p.ImageHeight, c)
-	
+
 	// Sending the CellFLippe once when the world is populated
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
 			if world[y][x] == 255 {
 				c.events <- CellFlipped{
 					CompletedTurns: 0,
-					Cell:          util.Cell{X: x, Y: y},
+					Cell:           util.Cell{X: x, Y: y},
 				}
 			}
 		}
