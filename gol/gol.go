@@ -19,6 +19,29 @@ type Params struct {
 	ImageHeight int
 }
 
+// FOR PARALLEL HEAP ALLOCATION
+func heapAllocationDefaultWorker(slice [][]uint8, resChan chan<- [][]uint8) {
+	resChan <- calculateResultSliceForWorkerHeapAllocation(slice)
+}
+
+func distributeWithHeapAllocation(p Params, c distributorChannels, keyPresses <-chan rune) {
+	heapAllocationTurnFn := func(p Params, world *[][]uint8, completedTurns int) {
+		world2 := startWorkersHeapAllocation(p, *world, heapAllocationDefaultWorker)
+		for y := 0; y < p.ImageHeight; y++ {
+			for x := 0; x < p.ImageWidth; x++ {
+				if (*world)[y][x] != world2[y][x] {
+					c.events <- CellFlipped{
+						CompletedTurns: completedTurns + 1,
+						Cell: util.Cell{X: x, Y: y},
+					}
+				}
+			}
+		}
+		*world = world2
+	}
+	distributor(p, c, keyPresses, heapAllocationTurnFn)
+}
+
 // FOR PARALLEL DOUBLE BUFFER
 func defaultWorker(slice [][]uint8, destination [][]uint8, done chan<- struct{}) {
 	calculateResultSliceForWorker(slice, destination)
@@ -39,7 +62,7 @@ func distributeWithDoubleBuffer(p Params, c distributorChannels, keyPresses <-ch
 				if (*world)[y][x] != world2[y][x] {
 					c.events <- CellFlipped{
 						CompletedTurns: completedTurns,
-						Cell:          util.Cell{X: x, Y: y},
+						Cell: util.Cell{X: x, Y: y},
 					}
 				}
 			}
@@ -219,7 +242,8 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioFilenameChan <- fileName
 
 	// TODO uncomment the preferred function below (and comment out the rest)
-	// distributeWithBroker(p, distributorChannels, keyPresses)
+	distributeWithHeapAllocation(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)
-	distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
+	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
+	// distributeWithBroker(p, distributorChannels, keyPresses)
 }

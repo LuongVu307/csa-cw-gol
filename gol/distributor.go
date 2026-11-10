@@ -131,6 +131,13 @@ func calculateCellsFlippedMapReduce(p Params, world [][]uint8) []util.Cell {
 	return cellsFlipped
 }
 
+// Allocate a fresh output strip inside each worker on every turn.
+func calculateResultSliceForWorkerHeapAllocation(slice [][]uint8) [][]uint8 {
+	destination := make2DSlice(len(slice[0]), len(slice)-2)
+	calculateResultSliceForWorker(slice, destination)
+	return destination
+}
+
 func calculateResultSliceForWorker(slice [][]uint8, destination [][]uint8) {
 
 	sliceHeight := len(slice)
@@ -201,6 +208,42 @@ func calculateAliveCellsCount(p Params, world [][]uint8) int {
 		}
 	}
 	return alive
+}
+
+// Workers return fresh strips in partition order. Only row references are
+// assembled here; their pixel data is not copied into another board.
+func startWorkersHeapAllocation(p Params, world [][]uint8,
+	worker func(slice [][]uint8, resChan chan<- [][]uint8)) [][]uint8 {
+	threads := p.Threads
+	height := p.ImageHeight
+	step := height / threads
+	stepRemain := height % threads
+	resultsArr := make([]chan [][]uint8, threads)
+	first := 0
+	for idx := 0; idx < threads; idx++ {
+		stripHeight := step
+		if idx < stepRemain {
+			stripHeight++
+		}
+		last := first + stripHeight
+		// Two halo rows also handle a single worker and empty partitions.
+		slice := make([][]uint8, stripHeight+2)
+		for row := range slice {
+			slice[row] = world[modulo(first+row-1, height)]
+		}
+		resultsArr[idx] = make(chan [][]uint8, 1)
+		go worker(slice, resultsArr[idx])
+		first = last
+	}
+
+	res := make([][]uint8, height)
+	idx := 0
+	for _, result := range resultsArr {
+		slice := <-result
+		copy(res[idx:], slice)
+		idx += len(slice)
+	}
+	return res
 }
 
 // the "worker" parameter takes in a slice with an extra row on the top and bottom,
@@ -473,7 +516,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 			if world[y][x] == 255 {
 				c.events <- CellFlipped{
 					CompletedTurns: 0,
-					Cell:           util.Cell{X: x, Y: y},
+					Cell: util.Cell{X: x, Y: y},
 				}
 			}
 		}
