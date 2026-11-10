@@ -131,7 +131,7 @@ func calculateCellsFlippedMapReduce(p Params, world [][]uint8) []util.Cell {
 	return cellsFlipped
 }
 
-func calculateResultSliceForWorker(slice [][]uint8) [][]uint8 {
+func calculateResultSliceForWorker(slice [][]uint8, destination [][]uint8) {
 
 	sliceHeight := len(slice)
 
@@ -142,24 +142,18 @@ func calculateResultSliceForWorker(slice [][]uint8) [][]uint8 {
 	hBegin := 1
 	hEnd := sliceHeight - 1
 
-	slice2 := make([][]uint8, sliceHeight-2)
-	for i := 0; i < sliceHeight-2; i++ {
-		slice2[i] = make([]uint8, sliceWidth)
-	}
-
 	for h := hBegin; h < hEnd; h++ {
 		for w := 0; w < sliceWidth; w++ {
 			live := calculateAdjacentLiveCellCountForWorker(w, h, sliceWidth, slice)
 			if slice[h][w] == 255 && (live < 2 || live > 3) {
-				slice2[h-1][w] = 0
+				destination[h-1][w] = 0
 			} else if slice[h][w] == 0 && live == 3 {
-				slice2[h-1][w] = 255
+				destination[h-1][w] = 255
 			} else {
-				slice2[h-1][w] = slice[h][w]
+				destination[h-1][w] = slice[h][w]
 			}
 		}
 	}
-	return slice2
 }
 func calculateFlippedCellsForWorkerMapReduce(slice [][]uint8, startY int) []util.Cell {
 	sliceHeight := len(slice)
@@ -210,14 +204,14 @@ func calculateAliveCellsCount(p Params, world [][]uint8) int {
 }
 
 // the "worker" parameter takes in a slice with an extra row on the top and bottom,
-// which returns a result slice WITHOUT the extra rows.
+// and writes into its destination slice WITHOUT the extra rows.
 // the "worker1" parameter takes in "world" and writes to the "res" slice
 //
 // "worker1" is the worker that is used when p.Threads == 1
 // "worker" is the worker that is used when p.Threads > 1
 func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8,
 	worker1 func(p Params, world [][]uint8, res [][]uint8),
-	worker func(slice [][]uint8, resChan chan [][]uint8)) {
+	worker func(slice [][]uint8, destination [][]uint8, done chan<- struct{})) {
 	threads := p.Threads
 	height := p.ImageHeight
 	// width := p.ImageWidth
@@ -229,14 +223,8 @@ func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8,
 
 		return
 	}
-	resultsArr := make([]chan [][]uint8, threads)
-	for i := 0; i < threads; i++ {
-		resultsArr[i] = make(chan [][]uint8, 1)
-	}
+	done := make(chan struct{}, threads)
 	{
-		// worker := func(slice [][]uint8, resChan chan [][]uint8) {
-		// 	resChan <- calculateResultSliceForWorker(slice)
-		// }
 		step := height / threads
 		stepRemain := height % threads
 
@@ -252,17 +240,17 @@ func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8,
 				for i := 0; i < last-first+1; i++ {
 					slice[i+1] = world[i]
 				}
-				go worker(slice, resultsArr[idx])
+				go worker(slice, res[first:last], done)
 			} else if last == height {
 				slice := make([][]uint8, last-first+2)
 				slice[last-first+1] = world[0]
 				for i := 0; i < last-first+1; i++ {
 					slice[i] = world[first-1+i]
 				}
-				go worker(slice, resultsArr[idx])
+				go worker(slice, res[first:last], done)
 			} else {
 				slice := world[first-1 : last+1]
-				go worker(slice, resultsArr[idx])
+				go worker(slice, res[first:last], done)
 			}
 
 			nextStep := step
@@ -286,19 +274,9 @@ func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8,
 		}
 	}
 
-	{
-		idx := 0
-		for i := 0; i < threads; i++ {
-			slice := <-resultsArr[i]
-			for j := 0; j < len(slice); j++ {
-				res[idx] = slice[j]
-				idx++
-			}
-		}
-		if idx != height {
-			fmt.Println("log: ", height, idx, threads)
-			panic("internal error")
-		}
+	// Every destination strip must be complete before the boards are compared or swapped.
+	for i := 0; i < threads; i++ {
+		<-done
 	}
 }
 

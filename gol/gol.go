@@ -20,8 +20,9 @@ type Params struct {
 }
 
 // FOR PARALLEL DOUBLE BUFFER
-func defaultWorker(slice [][]uint8, resChan chan [][]uint8) {
-	resChan <- calculateResultSliceForWorker(slice)
+func defaultWorker(slice [][]uint8, destination [][]uint8, done chan<- struct{}) {
+	calculateResultSliceForWorker(slice, destination)
+	done <- struct{}{}
 }
 func defaultWorkerSingleThread(p Params, world [][]uint8, res [][]uint8) {
 	calculateNextState(p, world, res)
@@ -67,8 +68,7 @@ func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan 
 
 		startWorkersMapReduce(p, *world, mapReduceDefaultWorkerSingleThread, mapReduceDefaultWorker, &cellsFlippedBuffer, &size)
 
-		// TODO: ipmlement flipping cells after every turn completed
-		
+		// TODO: implement flipping cells after every turn completed
 
 	}
 
