@@ -29,8 +29,20 @@ func defaultWorkerSingleThread(p Params, world [][]uint8, res [][]uint8) {
 func distributeWithDoubleBuffer(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	world2 := make2DSlice(p.ImageWidth, p.ImageHeight)
-	doubleBufferTurnFn := func(p Params, world *[][]uint8) {
+	doubleBufferTurnFn := func(p Params, world *[][]uint8, completedTurns int) {
 		startWorkersDoubleBuffer(p, *world, world2, defaultWorkerSingleThread, defaultWorker)
+
+		// Send the CellFlipped after every turn completed
+		for y := 0; y < p.ImageHeight; y++ {
+			for x := 0; x < p.ImageWidth; x++ {
+				if (*world)[y][x] != world2[y][x] {
+					c.events <- CellFlipped{
+						CompletedTurns: completedTurns,
+						Cell:          util.Cell{X: x, Y: y},
+					}
+				}
+			}
+		}
 
 		*world, world2 = world2, *world
 	}
@@ -50,10 +62,14 @@ func mapReduceDefaultWorkerSingleThread(p Params, world [][]uint8) []util.Cell {
 }
 func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan rune) {
 	cellsFlippedBuffer := make([]util.Cell, 0)
-	mapReduceTurnFn := func(p Params, world *[][]uint8) {
+	mapReduceTurnFn := func(p Params, world *[][]uint8, completedTurns int) {
 		size := 0
 
 		startWorkersMapReduce(p, *world, mapReduceDefaultWorkerSingleThread, mapReduceDefaultWorker, &cellsFlippedBuffer, &size)
+
+		// TODO: ipmlement flipping cells after every turn completed
+		
+
 	}
 
 	distributor(p, c, keyPresses, mapReduceTurnFn)
@@ -203,7 +219,7 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioFilenameChan <- fileName
 
 	// TODO uncomment the preferred function below (and comment out the rest)
-	distributeWithBroker(p, distributorChannels, keyPresses)
+	// distributeWithBroker(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)
-	// distributeWithMapReduce(p, distributorChannels, keyPresses)
+	distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
 }

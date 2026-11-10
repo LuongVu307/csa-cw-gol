@@ -482,10 +482,22 @@ func distributorDefaultExitFilenameFn(p Params) string {
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
-func distributor(p Params, c distributorChannels, keyPresses <-chan rune, completeTurn func(p Params, world *[][]uint8)) {
+func distributor(p Params, c distributorChannels, keyPresses <-chan rune, completeTurn func(p Params, world *[][]uint8, completedTurns int)) {
 
 	world := make2DSlice(p.ImageWidth, p.ImageHeight)
 	populateWorld(world, p.ImageWidth, p.ImageHeight, c)
+	
+	// Sending the CellFLippe once when the world is populated
+	for y := 0; y < p.ImageHeight; y++ {
+		for x := 0; x < p.ImageWidth; x++ {
+			if world[y][x] == 255 {
+				c.events <- CellFlipped{
+					CompletedTurns: 0,
+					Cell:          util.Cell{X: x, Y: y},
+				}
+			}
+		}
+	}
 
 	doneSig := make(chan bool)
 	pauseUnpauseCmdSig := make(chan bool)
@@ -535,8 +547,9 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 				c.events <- AliveCellsCount{i, calculateAliveCellsCount(p, world)}
 			default:
 				if !paused {
-					completeTurn(p, &world)
+					completeTurn(p, &world, i)
 					i++
+					c.events <- TurnComplete{CompletedTurns: i}
 				}
 			}
 
