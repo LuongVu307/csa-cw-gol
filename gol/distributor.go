@@ -226,6 +226,8 @@ func startWorkersDoubleBuffer(p Params, world [][]uint8, res [][]uint8,
 		// calculateNextState(p, world, res)
 
 		worker1(p, world, res)
+
+		return
 	}
 	resultsArr := make([]chan [][]uint8, threads)
 	for i := 0; i < threads; i++ {
