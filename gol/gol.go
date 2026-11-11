@@ -91,7 +91,12 @@ func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan 
 
 		startWorkersMapReduce(p, *world, mapReduceDefaultWorkerSingleThread, mapReduceDefaultWorker, &cellsFlippedBuffer, &size)
 
-		// TODO: implement flipping cells after every turn completed
+		for _, cell := range cellsFlippedBuffer[:size] {
+			c.events <- CellFlipped{
+				CompletedTurns: completedTurns + 1,
+				Cell: cell,
+			}
+		}
 
 	}
 
@@ -242,8 +247,8 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioFilenameChan <- fileName
 
 	// TODO uncomment the preferred function below (and comment out the rest)
-	distributeWithHeapAllocation(p, distributorChannels, keyPresses)
-	// distributeWithMapReduce(p, distributorChannels, keyPresses)
+	// distributeWithHeapAllocation(p, distributorChannels, keyPresses)
 	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
+	distributeWithMapReduce(p, distributorChannels, keyPresses)
 	// distributeWithBroker(p, distributorChannels, keyPresses)
 }
