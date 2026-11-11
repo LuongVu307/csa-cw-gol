@@ -494,15 +494,7 @@ func distributorExitFn(p Params, c distributorChannels, world [][]uint8, turnsDo
 }
 
 func distributorDefaultExitFilenameFn(p Params) string {
-	defaultExitFilename := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
-	if p.Turns == 100 {
-		defaultExitFilename += "x100"
-	} else if p.Turns == 0 {
-		defaultExitFilename += "x0"
-	} else {
-		defaultExitFilename += "x" + strconv.Itoa(p.Threads)
-	}
-	return defaultExitFilename
+	return distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, p.Turns)
 }
 
 // distributor divides the work between workers and interacts with other goroutines.

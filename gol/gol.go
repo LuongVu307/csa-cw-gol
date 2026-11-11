@@ -61,7 +61,7 @@ func distributeWithDoubleBuffer(p Params, c distributorChannels, keyPresses <-ch
 			for x := 0; x < p.ImageWidth; x++ {
 				if (*world)[y][x] != world2[y][x] {
 					c.events <- CellFlipped{
-						CompletedTurns: completedTurns,
+						CompletedTurns: completedTurns + 1,
 						Cell: util.Cell{X: x, Y: y},
 					}
 				}
