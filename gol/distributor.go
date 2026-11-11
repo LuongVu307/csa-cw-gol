@@ -343,14 +343,15 @@ func startWorkersMapReduce(p Params, world [][]uint8,
 	// width := p.ImageWidth
 
 	channelBufferSize := 10
-
+	
 	if threads == 1 {
 		// calculateNextStateMapReduce(p, world)
 
 		cs := worker1(p, world)
 		for i := 0; i < len(cs); i++ {
 			cell := cs[i]
-			world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]
+			sizedAppend(cellsFlipped, sizeP, cell)
+			world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]			
 		}
 	} else {
 
