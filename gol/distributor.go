@@ -209,6 +209,15 @@ func calculateAliveCellsCount(p Params, world [][]uint8) int {
 	}
 	return alive
 }
+func calculateAliveCellsCount1D(p Params, world []uint8) int {
+	alive := 0
+	for i := 0; i < p.ImageHeight*p.ImageWidth; i++ {
+		if world[i] == 255 {
+			alive++
+		}
+	}
+	return alive
+}
 
 // Workers return fresh strips in partition order. Only row references are
 // assembled here; their pixel data is not copied into another board.
@@ -343,7 +352,7 @@ func startWorkersMapReduce(p Params, world [][]uint8,
 	// width := p.ImageWidth
 
 	channelBufferSize := 10
-	
+
 	if threads == 1 {
 		// calculateNextStateMapReduce(p, world)
 
@@ -351,7 +360,7 @@ func startWorkersMapReduce(p Params, world [][]uint8,
 		for i := 0; i < len(cs); i++ {
 			cell := cs[i]
 			sizedAppend(cellsFlipped, sizeP, cell)
-			world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]			
+			world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]
 		}
 	} else {
 
@@ -455,6 +464,11 @@ func outputWorker(p Params, c distributorChannels, world [][]uint8) {
 		}
 	}
 }
+func outputWorker1D(p Params, c distributorChannels, world []uint8) {
+	for i := 0; i < p.ImageWidth*p.ImageHeight; i++ {
+		c.ioOutput <- world[i]
+	}
+}
 
 func make2DSlice(x int, y int) [][]uint8 {
 	res := make([][]uint8, y)
@@ -469,6 +483,11 @@ func populateWorld(world [][]uint8, x int, y int, c distributorChannels) {
 		for j := 0; j < x; j++ {
 			world[i][j] = <-c.ioInput
 		}
+	}
+}
+func populateWorld1D(world []uint8, x int, y int, c distributorChannels) {
+	for i := 0; i < x*y; i++ {
+		world[i] = <-c.ioInput
 	}
 }
 
@@ -509,7 +528,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 			if world[y][x] == 255 {
 				c.events <- CellFlipped{
 					CompletedTurns: 0,
-					Cell: util.Cell{X: x, Y: y},
+					Cell:           util.Cell{X: x, Y: y},
 				}
 			}
 		}

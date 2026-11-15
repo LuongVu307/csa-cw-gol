@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
+	"unsafe"
 )
 
 // Params provides the details of how to run the Game of Life and which image to load.
@@ -32,7 +33,7 @@ func distributeWithHeapAllocation(p Params, c distributorChannels, keyPresses <-
 				if (*world)[y][x] != world2[y][x] {
 					c.events <- CellFlipped{
 						CompletedTurns: completedTurns + 1,
-						Cell: util.Cell{X: x, Y: y},
+						Cell:           util.Cell{X: x, Y: y},
 					}
 				}
 			}
@@ -62,7 +63,7 @@ func distributeWithDoubleBuffer(p Params, c distributorChannels, keyPresses <-ch
 				if (*world)[y][x] != world2[y][x] {
 					c.events <- CellFlipped{
 						CompletedTurns: completedTurns + 1,
-						Cell: util.Cell{X: x, Y: y},
+						Cell:           util.Cell{X: x, Y: y},
 					}
 				}
 			}
@@ -94,7 +95,7 @@ func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan 
 		for _, cell := range cellsFlippedBuffer[:size] {
 			c.events <- CellFlipped{
 				CompletedTurns: completedTurns + 1,
-				Cell: cell,
+				Cell:           cell,
 			}
 		}
 
@@ -131,13 +132,17 @@ type CellCountResult struct {
 	Count int
 }
 
-func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan rune) {
+func getBrokerUrl() string {
 	bytes, err := os.ReadFile("brokerURL.txt")
 	if err != nil {
 		panic("brokerURL.txt not found")
 	}
 	// theres some newline character in the filename, this just removes it
-	url := strings.ReplaceAll(string(bytes), "\n", "")
+	return strings.ReplaceAll(strings.ReplaceAll(string(bytes), "\r\n", ""), "\n", "")
+}
+
+func connectToBroker() *rpc.Client {
+	url := getBrokerUrl()
 	fmt.Println("Connecting to server at (", url, ")")
 	client, err := rpc.Dial("tcp", url)
 	fmt.Println("Attempted connection")
@@ -146,6 +151,11 @@ func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan run
 	} else {
 		fmt.Println("Connection successful")
 	}
+	return client
+}
+
+func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan rune) {
+	client := connectToBroker()
 
 	world := make2DSlice(p.ImageWidth, p.ImageHeight)
 	populateWorld(world, p.ImageWidth, p.ImageHeight, c)
@@ -216,6 +226,106 @@ func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan run
 	close(c.events)
 }
 
+type BrokerCpp struct {
+	State  unsafe.Pointer
+	Port   int
+	DimMtx sync.RWMutex
+	Width  int
+	Height int
+}
+type BrokerArgsCpp struct {
+	P     Params
+	World []uint8
+}
+
+type CompleteResultCpp struct {
+	Turn int
+	Res  []uint8
+}
+type SaveResultCpp struct {
+	Turn int
+	Res  []uint8
+}
+type QuitResultCpp struct {
+}
+type PauseUnpauseResultCpp struct {
+	Turns   int
+	IsPause bool
+}
+type CellCountResultCpp struct {
+	Turn  int
+	Count int
+}
+
+func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan rune) {
+	client := connectToBroker()
+
+	world := make([]uint8, p.ImageWidth*p.ImageHeight)
+	populateWorld1D(world, p.ImageWidth, p.ImageHeight, c)
+
+	doneSig := make(chan bool, 1)
+	ticker := time.NewTicker(2 * time.Second)
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		contLoop := true
+		for contLoop {
+			select {
+			case <-ticker.C:
+				var res CellCountResultCpp
+				client.Call("Broker.ProcessCellCount", 0, &res)
+				c.events <- AliveCellsCount{
+					CompletedTurns: res.Turn,
+					CellsCount:     res.Count,
+				}
+			case key := <-keyPresses:
+				switch key {
+				case 's':
+					var res SaveResultCpp
+					client.Call("Broker.ProcessSave", 0, &res)
+					fmt.Println("Alive in save result: ", calculateAliveCellsCount1D(p, res.Res))
+					filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn)
+
+					c.ioCommand <- ioOutput
+					c.ioFilename <- filename
+					outputWorker1D(p, c, res.Res)
+
+					c.ioCommand <- ioCheckIdle
+					<-c.ioIdle
+
+					c.events <- ImageOutputComplete{res.Turn, filename}
+				case 'q':
+					var res QuitResultCpp
+					client.Call("Broker.ProcessQuit", 0, &res)
+				case 'p':
+					var res PauseUnpauseResultCpp
+					client.Call("Broker.ProcessPauseUnpause", 0, &res)
+					if res.IsPause {
+						c.events <- StateChange{res.Turns, Paused}
+					} else {
+						c.events <- StateChange{res.Turns, Executing}
+					}
+				}
+
+			case <-doneSig:
+				contLoop = false
+			}
+		}
+	})
+
+	c.events <- StateChange{0, Executing}
+	args := BrokerArgsCpp{P: p, World: world}
+	var res CompleteResult
+	client.Call("Broker.ProcessConnection", args, &res)
+	doneSig <- true
+
+	wg.Wait()
+	if res.Res != nil {
+		distributorExitFn(p, c, res.Res, res.Turn, distributorDefaultExitFilenameFn(p))
+	}
+	close(c.events)
+}
+
 func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioCommandChan := make(chan ioCommand)
 	ioIdleChan := make(chan bool)
@@ -249,6 +359,7 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	// TODO uncomment the preferred function below (and comment out the rest)
 	// distributeWithHeapAllocation(p, distributorChannels, keyPresses)
 	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
-	distributeWithMapReduce(p, distributorChannels, keyPresses)
+	// distributeWithMapReduce(p, distributorChannels, keyPresses)
 	// distributeWithBroker(p, distributorChannels, keyPresses)
+	distributeWithCppBroker(p, distributorChannels, keyPresses)
 }
