@@ -43,3 +43,23 @@ your-out\.txt
 your-time\.txt
 
 .DS_Store
+
+# Generated LaTeX build files (keep report.tex tracked)
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.nav
+*.snm
+*.vrb
+
+# Compiled report; do not ignore PDF figures used by the source
+/report.pdf
