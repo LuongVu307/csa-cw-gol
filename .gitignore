@@ -62,4 +62,4 @@ your-time\.txt
 *.vrb
 
 # Compiled report; do not ignore PDF figures used by the source
-/report.pdf
+# /report.pdf
