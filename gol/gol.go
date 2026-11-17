@@ -1,12 +1,10 @@
 package gol
 
 import (
-	"fmt"
 	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
 )
@@ -131,89 +129,102 @@ type CellCountResult struct {
 	Count int
 }
 
-func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan rune) {
-	bytes, err := os.ReadFile("brokerURL.txt")
-	if err != nil {
-		panic("brokerURL.txt not found")
-	}
-	// theres some newline character in the filename, this just removes it
-	url := strings.ReplaceAll(string(bytes), "\n", "")
-	fmt.Println("Connecting to server at (", url, ")")
-	client, err := rpc.Dial("tcp", url)
-	fmt.Println("Attempted connection")
-	if err != nil {
-		panic("Failed to connect to broker")
-	} else {
-		fmt.Println("Connection successful")
-	}
+// TurnResult matches the broker's ordered stream of reducer results.
+type TurnResult struct {
+	Turn  int
+	Cells []util.Cell
+	Done  bool
+	Res   [][]uint8
+}
 
+func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan rune) {
+	data, err := os.ReadFile("brokerURL.txt")
+	util.Check(err)
+	client, err := rpc.Dial("tcp", strings.TrimSpace(string(data)))
+	util.Check(err)
+	defer client.Close()
+	distributeWithBrokerClient(p, c, keyPresses, client)
+}
+
+func distributeWithBrokerClient(p Params, c distributorChannels, keyPresses <-chan rune, client *rpc.Client) {
 	world := make2DSlice(p.ImageWidth, p.ImageHeight)
 	populateWorld(world, p.ImageWidth, p.ImageHeight, c)
+	// As in the parallel distributor, initialise the display before Executing.
+	for _, cell := range calculateAliveCells(p, world) {
+		c.events <- CellFlipped{CompletedTurns: 0, Cell: cell}
+	}
+	var started bool
+	util.Check(client.Call("Broker.ProcessStart", BrokerArgs{P: p, World: world}, &started))
+	c.events <- StateChange{0, Executing}
 
-	doneSig := make(chan bool, 1)
+	// Only this goroutine emits turn events. It drains every reducer batch,
+	// including the final batch, before announcing completion to the controller.
+	finished := make(chan TurnResult, 1)
+	go func() {
+		for {
+			var turn TurnResult
+			util.Check(client.Call("Broker.ProcessNextTurn", 0, &turn))
+			if turn.Done {
+				finished <- turn
+				return
+			}
+			if len(turn.Cells) != 0 {
+				c.events <- CellsFlipped{CompletedTurns: turn.Turn, Cells: turn.Cells}
+			}
+			c.events <- TurnComplete{CompletedTurns: turn.Turn}
+		}
+	}()
 	ticker := time.NewTicker(2 * time.Second)
-
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		contLoop := true
-		for contLoop {
-			select {
-			case <-ticker.C:
-				var res CellCountResult
-				client.Call("Broker.ProcessCellCount", 0, &res)
-				c.events <- AliveCellsCount{
-					CompletedTurns: res.Turn,
-					CellsCount:     res.Count,
+	defer ticker.Stop()
+	for {
+		select {
+		case result := <-finished:
+			distributorExitFn(p, c, result.Res, result.Turn, distributorDefaultExitFilenameFn(p))
+			close(c.events)
+			return
+		case <-ticker.C:
+			var result CellCountResult
+			util.Check(client.Call("Broker.ProcessCellCount", 0, &result))
+			c.events <- AliveCellsCount{CompletedTurns: result.Turn, CellsCount: result.Count}
+		case key := <-keyPresses:
+			switch key {
+			case 's':
+				var result SaveResult
+				util.Check(client.Call("Broker.ProcessSave", 0, &result))
+				filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, result.Turn)
+				c.ioCommand <- ioOutput
+				c.ioFilename <- filename
+				outputWorker(p, c, result.Res)
+				c.ioCommand <- ioCheckIdle
+				<-c.ioIdle
+				c.events <- ImageOutputComplete{result.Turn, filename}
+			case 'p':
+				var result PauseUnpauseResult
+				util.Check(client.Call("Broker.ProcessPauseUnpause", 0, &result))
+				if result.IsPause {
+					c.events <- StateChange{result.Turns, Paused}
+				} else {
+					c.events <- StateChange{result.Turns, Executing}
 				}
-			case key := <-keyPresses:
-				switch key {
-				case 's':
-					var res SaveResult
-					client.Call("Broker.ProcessSave", 0, &res)
-					fmt.Println("Alive in save result: ", calculateAliveCellsCount(p, res.Res))
-					filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn)
-
-					c.ioCommand <- ioOutput
-					c.ioFilename <- filename
-					outputWorker(p, c, res.Res)
-
-					c.ioCommand <- ioCheckIdle
-					<-c.ioIdle
-
-					c.events <- ImageOutputComplete{res.Turn, filename}
-				case 'q':
-					var res QuitResult
-					client.Call("Broker.ProcessQuit", 0, &res)
-					distributorExitFn(p, c, res.Res, res.Turn, distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn))
-					<-doneSig
-					contLoop = false
-				case 'p':
-					var res PauseUnpauseResult
-					client.Call("Broker.ProcessPauseUnpause", 0, &res)
-					if res.IsPause {
-						c.events <- StateChange{res.Turns, Paused}
-					} else {
-						c.events <- StateChange{res.Turns, Executing}
-					}
+			case 'q', 'k':
+				var result QuitResult
+				method := "Broker.ProcessQuit"
+				if key == 'k' {
+					method = "Broker.ProcessKill"
 				}
-
-			case <-doneSig:
-				contLoop = false
+				util.Check(client.Call(method, 0, &result))
+				<-finished
+				distributorFinalOutputFn(p, c, result.Res, result.Turn, distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, result.Turn))
+				if key == 'k' {
+					var stopped bool
+					util.Check(client.Call("Broker.ProcessShutdown", 0, &stopped))
+				}
+				c.events <- StateChange{result.Turn, Quitting}
+				close(c.events)
+				return
 			}
 		}
-	})
-
-	c.events <- StateChange{0, Executing}
-	args := BrokerArgs{P: p, World: world}
-	var res CompleteResult
-	client.Call("Broker.ProcessConnection", args, &res)
-	doneSig <- true
-
-	wg.Wait()
-	if res.Res != nil {
-		distributorExitFn(p, c, res.Res, res.Turn, distributorDefaultExitFilenameFn(p))
 	}
-	close(c.events)
 }
 
 func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
@@ -249,6 +260,6 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	// TODO uncomment the preferred function below (and comment out the rest)
 	// distributeWithHeapAllocation(p, distributorChannels, keyPresses)
 	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
-	distributeWithMapReduce(p, distributorChannels, keyPresses)
-	// distributeWithBroker(p, distributorChannels, keyPresses)
+	// distributeWithMapReduce(p, distributorChannels, keyPresses)
+	distributeWithBroker(p, distributorChannels, keyPresses)
 }
