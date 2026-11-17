@@ -5,6 +5,9 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{graphicx}
+\usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{amsmath}
@@ -25,9 +28,174 @@
 
 \subsection{Functionality and Correctness}
 
+Our primary parallel implementation uses map-reduce to evolve a two-dimensional
+board whose cells are represented by bytes: 255 for alive and 0 for dead.
+Each cell's next state depends on its eight neighbours. Both dimensions wrap
+around, producing a toroidal board. The board dimensions, number of turns,
+and requested worker count are supplied through \texttt{gol.Params}.
+
+The implementation reports initial live cells and subsequent cell changes
+through an event channel, allowing SDL to display progress. It also supports
+PGM snapshots, pause/resume (\texttt{p}), saving (\texttt{s}), and quitting
+with output (\texttt{q}). A two-second ticker requests an alive-cell count;
+the simulation loop handles this request between turns, so reporting can be
+delayed by a long turn or blocked event delivery. Normal completion outputs
+the final board and waits for I/O completion before emitting
+\texttt{ImageOutputComplete} and the \texttt{Quitting} state. The final
+simulation-result event itself is emitted before image writing.
+
+% Add actual correctness evidence here: supplied tests, worker/board
+% configurations, race-detector command and results, and known limitations.
+% The functionality above describes code paths; it is not a claim that all
+% tests pass. Keep this distinction until verification is complete.
+
 \subsection{Concurrency and Synchronisation}
 
+\paragraph{Distributor architecture.}
+The distributor connects the PGM I/O and SDL components to the simulation logic. 
+It allocates the board, receives image pixels through the
+I/O input channel, and emits initial live-cell events to populate the display.
+The map-reduce entry point supplies a \texttt{completeTurn} callback, separating
+turn calculation from the distributor's common control and output workflow.
+
+The distributor then runs two concurrent loops. One call 
+\texttt{wg.Go(loopFn)} to start a simulation goroutine, while the original
+execution continues running in an outer loop to receive keyboard input and completion
+notifications. The outer loop forwards save, pause, and quit commands through
+unbuffered internal channels and  doesn't modify the board. The simulation
+loop processes board updates and accepts commands between generations. This
+prevents control handlers from independently accessing a board
+while workers are calculating its next state. Figure~\ref{fig:parallel-flow}
+shows the main communication paths.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=10mm and 24mm,
+  box/.style={draw,rounded corners,align=center,font=\small,
+              minimum width=33mm,minimum height=10mm},
+  flow/.style={-{Latex},thick},
+  every edge quotes/.style={font=\scriptsize}]
+\node[box] (outer) {Outer distributor\\keyboard/control loop};
+\node[box,right=of outer] (sim) {Simulation loop};
+\node[box,right=of sim] (workers) {Strip workers\\read-only map phase};
+\node[box,below=of outer] (sdl) {Supplied SDL loop};
+\node[box,below=20mm of sim] (io) {Supplied I/O goroutine};
+\draw[flow] (sdl) -- node[left,font=\scriptsize]{keys} (outer);
+\draw[flow] (outer.north east) to[bend left=15]
+  node[above,font=\scriptsize]{commands} (sim.north west);
+\draw[flow] (sim.south west) to[bend left=15]
+  node[below,font=\scriptsize]{normal completion} (outer.south east);
+\draw[flow] (sim.north east) to[bend left=15]
+  node[above,font=\scriptsize]{launch / shared strips} (workers.north west);
+\draw[flow] (workers.south west) to[bend left=15]
+  node[below,font=\scriptsize]{changed coordinates} (sim.south east);
+\draw[flow] (sim.south) -- node[below,sloped,font=\scriptsize]{events} (sdl.east);
+\draw[flow] (sim.south) -- node[right,pos=0.75,font=\scriptsize]{I/O channels} (io.north);
+\end{tikzpicture}
+\captionsetup{font=small}
+\caption{Parallel execution roles. }
+\label{fig:parallel-flow}
+\end{figure}
+
+Worker results and control signals use channels; workers share references to board rows. 
+The I/O link summarises separate command, data, and acknowledgement channels. A helper goroutine
+(not shown) waits for worker completion.
+
+\paragraph{Map-reduce architecture.}
+For multiple workers, the \texttt{startWorkersMapReduce} divides the
+board into horizontal strips, distributing remainder rows when the height
+is not divisible by the worker count. Each strip also includes read-only halo
+rows above and below; this with the wrap-around indices make sure all neighbours 
+are covered within a cell. A starting-row offset maps local results to global
+coordinates. Repeated \texttt{wg.Go(...)} calls launch calculation goroutines,
+which Go may execute in parallel according to available CPU resources and
+\texttt{GOMAXPROCS}. Each worker reads the current generation, builds a local
+change list, and sends its coordinates through a shared buffered channel \texttt{cellFlippedChan}.
+For one worker, the change list is calculated directly by the
+simulation goroutine.
+
+The simulation goroutine collects coordinates while workers run, allowing
+workers to continue sending when the channel would otherwise fill. A separate
+wait group tracks these workers. A helper goroutine waits for their return,
+signals completion, and closes the result channel; the collector drains any
+remaining results before modifying the board. Worker completion indicates
+that shared reading have finished, while draining indicates that all results
+have been received. The reduce phase then applies the flips in place. This
+ordering preserves a single input generation without per-cell locks.
+
+The collected-coordinate buffer is reused between turns. Its entries also
+produce \texttt{CellFlipped} events, avoiding a separate full-board comparison.
+After the callback returns, the distributor increments the completed-turn
+counter and emits \texttt{TurnComplete}. Collection, applying flips, and event
+delivery remain in serial; worker goroutines and local change lists are
+still created each turn.
+
+\paragraph{Controls and periodic reporting.}
+The simulation loop selects a ready command or ticker event; when none is
+ready, its \texttt{default} branch calculates another turn unless paused.
+The branches execute sequentially and have no fixed priority. Pause suppresses
+new turns while save, quit, and reporting remain available. Because commands
+cannot interrupt \texttt{completeTurn}, snapshots and counts refer to complete
+generations, but command response time depends on turn duration. The ticker
+requests alive-cell reporting every two seconds rather than pacing the
+simulation. Long turns or blocked event delivery can delay these reports.
+The current paused loop continues polling through \texttt{default}, so it
+can consume CPU while no generation is being calculated.
+
+\paragraph{Output and termination.}
+Saving streams the stable board to the I/O goroutine and waits for its idle
+acknowledgement before emitting \texttt{ImageOutputComplete}. Normal
+completion and user quit take different paths: after the requested turns,
+the simulation sends \texttt{doneSig}, returns, and the outer loop joins it
+before performing final output. On quit, the simulation performs final output
+itself; \texttt{quitFlag} prevents the outer loop from repeating it. The
+distributor's \texttt{wg.Wait()} tracks the simulation loop, whereas the
+map-reduce wait group tracks calculation workers. Joining the simulation
+ensures it has returned before the event channel closes. In the exit helper,
+\texttt{FinalTurnComplete} precedes image writing; \texttt{ImageOutputComplete}
+and \texttt{Quitting} follow the I/O acknowledgement.
+
+% Add verification evidence to the evaluation before claiming deadlock freedom.
+% In particular, investigate control requests at natural completion: opposing
+% unbuffered command and doneSig sends can leave both loops blocked.
+
 \subsection{Memory Strategies}
+
+All three strategies use the same Game of Life rules and common distributor
+control logic. They differ in how workers represent and combine next-state
+results. This allows the evaluation to compare allocation, synchronisation,
+and event-generation costs under a common workload.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}lXX@{}}
+\toprule
+Strategy & Result storage & Coordination and event generation \\
+\midrule
+Heap allocation & Each worker allocates a fresh output strip each turn;
+the coordinator assembles the returned row references. & Receive all strips,
+compare the old and new boards, then replace the current board. \\
+Double buffer & Two boards retain their pixel storage; workers write
+disjoint destination strips. & Wait for completion, compare the boards for
+changed cells, then swap source and destination references. \\
+Map-reduce (primary) & Workers allocate local change lists; the coordinator
+reuses its collected-coordinate buffer. & Collect all coordinates before
+applying changes in place; reuse them for flipped-cell events. \\
+\bottomrule
+\end{tabularx}
+\caption{Memory ownership and per-turn coordination in the three strategies.}
+\end{table}
+
+Heap allocation is expected to incur repeated board-result allocation,
+whereas double buffering avoids that allocation but still compares every
+cell to generate events. Map-reduce also examines every cell, even when
+few cells change; however, its result collection and update work depend on
+the number of changes. Dense changes may make coordinate storage and
+per-coordinate channel operations expensive. These are design expectations;
+the evaluation must establish their effect on measured runtime and memory
+use.
 
 \section{Parallel Evaluation}
 
