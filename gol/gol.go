@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
-	"unsafe"
 )
 
 // Params provides the details of how to run the Game of Life and which image to load.
@@ -180,7 +179,6 @@ func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan run
 				case 's':
 					var res SaveResult
 					client.Call("Broker.ProcessSave", 0, &res)
-					fmt.Println("Alive in save result: ", calculateAliveCellsCount(p, res.Res))
 					filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn)
 
 					c.ioCommand <- ioOutput
@@ -226,13 +224,6 @@ func distributeWithBroker(p Params, c distributorChannels, keyPresses <-chan run
 	close(c.events)
 }
 
-type BrokerCpp struct {
-	State  unsafe.Pointer
-	Port   int
-	DimMtx sync.RWMutex
-	Width  int
-	Height int
-}
 type BrokerArgsCpp struct {
 	P     Params
 	World []uint8
@@ -266,24 +257,29 @@ func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan 
 	doneSig := make(chan bool, 1)
 	ticker := time.NewTicker(2 * time.Second)
 
+	quitFg := false
+
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		contLoop := true
 		for contLoop {
+			fmt.Println("Waiting for event")
 			select {
 			case <-ticker.C:
+				fmt.Println("Calling cell count")
 				var res CellCountResultCpp
-				client.Call("Broker.ProcessCellCount", 0, &res)
+				client.Call("CppBroker.ProcessCellCount", 0, &res)
 				c.events <- AliveCellsCount{
 					CompletedTurns: res.Turn,
 					CellsCount:     res.Count,
 				}
+				fmt.Println("Finished cell count")
 			case key := <-keyPresses:
 				switch key {
 				case 's':
+					fmt.Println("Calling save")
 					var res SaveResultCpp
-					client.Call("Broker.ProcessSave", 0, &res)
-					fmt.Println("Alive in save result: ", calculateAliveCellsCount1D(p, res.Res))
+					client.Call("CppBroker.ProcessSave", 0, &res)
 					filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn)
 
 					c.ioCommand <- ioOutput
@@ -294,20 +290,29 @@ func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan 
 					<-c.ioIdle
 
 					c.events <- ImageOutputComplete{res.Turn, filename}
+
+					fmt.Println("Finished save")
 				case 'q':
+					fmt.Println("Calling quit")
 					var res QuitResultCpp
-					client.Call("Broker.ProcessQuit", 0, &res)
+					client.Call("CppBroker.ProcessQuit", 0, &res)
+					fmt.Println("Finished quit")
+					quitFg = true
 				case 'p':
 					var res PauseUnpauseResultCpp
-					client.Call("Broker.ProcessPauseUnpause", 0, &res)
+					fmt.Println("Calling pause unpause")
+					client.Call("CppBroker.ProcessPauseUnpause", 0, &res)
+					fmt.Println("Recieved pause unpause res, is pause: ", res.IsPause)
 					if res.IsPause {
 						c.events <- StateChange{res.Turns, Paused}
 					} else {
 						c.events <- StateChange{res.Turns, Executing}
 					}
+					fmt.Println("Submitted state change")
 				}
 
 			case <-doneSig:
+				fmt.Println("Done, no longer waiting for event")
 				contLoop = false
 			}
 		}
@@ -315,18 +320,27 @@ func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan 
 
 	c.events <- StateChange{0, Executing}
 	args := BrokerArgsCpp{P: p, World: world}
-	var res CompleteResult
-	client.Call("Broker.ProcessConnection", args, &res)
+	var res CompleteResultCpp
+	fmt.Println("CppBroker.ProcessConnection has been called")
+	e := client.Call("CppBroker.ProcessConnection", args, &res)
+	fmt.Println("CppBroker.ProcessConnection call has returned")
+	if e != nil {
+		fmt.Println("Error: ", e)
+		panic("Exiting")
+	}
 	doneSig <- true
 
 	wg.Wait()
-	if res.Res != nil {
-		distributorExitFn(p, c, res.Res, res.Turn, distributorDefaultExitFilenameFn(p))
+	if quitFg {
+		distributorExitFn1D(p, c, res.Res, res.Turn, distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn))
+	} else {
+		distributorExitFn1D(p, c, res.Res, res.Turn, distributorDefaultExitFilenameFn(p))
 	}
 	close(c.events)
 }
 
 func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
+	fmt.Println("Starting gol.Run")
 	ioCommandChan := make(chan ioCommand)
 	ioIdleChan := make(chan bool)
 	ioFilenameChan := make(chan string)
@@ -361,5 +375,6 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)
 	// distributeWithBroker(p, distributorChannels, keyPresses)
+	fmt.Println("Starting distributor")
 	distributeWithCppBroker(p, distributorChannels, keyPresses)
 }

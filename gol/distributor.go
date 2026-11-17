@@ -198,6 +198,15 @@ func calculateAliveCells(p Params, world [][]uint8) []util.Cell {
 	}
 	return alive
 }
+func calculateAliveCells1D(p Params, world []uint8) []util.Cell {
+	alive := []util.Cell{}
+	for i := 0; i < p.ImageHeight*p.ImageWidth; i++ {
+		if world[i] == 255 {
+			alive = append(alive, util.Cell{X: i % p.ImageWidth, Y: i / p.ImageWidth})
+		}
+	}
+	return alive
+}
 func calculateAliveCellsCount(p Params, world [][]uint8) int {
 	alive := 0
 	for h := 0; h < p.ImageHeight; h++ {
@@ -501,6 +510,22 @@ func distributorExitFn(p Params, c distributorChannels, world [][]uint8, turnsDo
 	c.ioFilename <- filename
 	// no point in using "go" keyword, the current goroutine will anyways block until IO is done
 	outputWorker(p, c, world)
+
+	// Make sure that the Io has finished any output before exiting.
+	c.ioCommand <- ioCheckIdle
+	<-c.ioIdle
+
+	c.events <- ImageOutputComplete{turnsDone, filename}
+
+	c.events <- StateChange{turnsDone, Quitting}
+
+}
+func distributorExitFn1D(p Params, c distributorChannels, world []uint8, turnsDone int, filename string) {
+	c.events <- FinalTurnComplete{turnsDone, calculateAliveCells1D(p, world)}
+	c.ioCommand <- ioOutput
+	c.ioFilename <- filename
+	// no point in using "go" keyword, the current goroutine will anyways block until IO is done
+	outputWorker1D(p, c, world)
 
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
