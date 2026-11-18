@@ -263,21 +263,17 @@ func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan 
 	wg.Go(func() {
 		contLoop := true
 		for contLoop {
-			fmt.Println("Waiting for event")
 			select {
 			case <-ticker.C:
-				fmt.Println("Calling cell count")
 				var res CellCountResultCpp
 				client.Call("CppBroker.ProcessCellCount", 0, &res)
 				c.events <- AliveCellsCount{
 					CompletedTurns: res.Turn,
 					CellsCount:     res.Count,
 				}
-				fmt.Println("Finished cell count")
 			case key := <-keyPresses:
 				switch key {
 				case 's':
-					fmt.Println("Calling save")
 					var res SaveResultCpp
 					client.Call("CppBroker.ProcessSave", 0, &res)
 					filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn)
@@ -291,28 +287,21 @@ func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan 
 
 					c.events <- ImageOutputComplete{res.Turn, filename}
 
-					fmt.Println("Finished save")
 				case 'q':
-					fmt.Println("Calling quit")
 					var res QuitResultCpp
 					client.Call("CppBroker.ProcessQuit", 0, &res)
-					fmt.Println("Finished quit")
 					quitFg = true
 				case 'p':
 					var res PauseUnpauseResultCpp
-					fmt.Println("Calling pause unpause")
 					client.Call("CppBroker.ProcessPauseUnpause", 0, &res)
-					fmt.Println("Recieved pause unpause res, is pause: ", res.IsPause)
 					if res.IsPause {
 						c.events <- StateChange{res.Turns, Paused}
 					} else {
 						c.events <- StateChange{res.Turns, Executing}
 					}
-					fmt.Println("Submitted state change")
 				}
 
 			case <-doneSig:
-				fmt.Println("Done, no longer waiting for event")
 				contLoop = false
 			}
 		}
@@ -321,9 +310,7 @@ func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan 
 	c.events <- StateChange{0, Executing}
 	args := BrokerArgsCpp{P: p, World: world}
 	var res CompleteResultCpp
-	fmt.Println("CppBroker.ProcessConnection has been called")
 	e := client.Call("CppBroker.ProcessConnection", args, &res)
-	fmt.Println("CppBroker.ProcessConnection call has returned")
 	if e != nil {
 		fmt.Println("Error: ", e)
 		panic("Exiting")
@@ -340,7 +327,6 @@ func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan 
 }
 
 func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
-	fmt.Println("Starting gol.Run")
 	ioCommandChan := make(chan ioCommand)
 	ioIdleChan := make(chan bool)
 	ioFilenameChan := make(chan string)
@@ -375,6 +361,6 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)
 	// distributeWithBroker(p, distributorChannels, keyPresses)
-	fmt.Println("Starting distributor")
 	distributeWithCppBroker(p, distributorChannels, keyPresses)
+	fmt.Println("dajsds")
 }
