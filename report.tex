@@ -189,7 +189,7 @@ applying changes in place; reuse them for flipped-cell events. \\
 \end{table}
 
 Heap allocation is expected to incur repeated board-result allocation,
-whereas double buffering avoids that allocation but still compares every
+whereas double buffer avoids that allocation but still compares every
 cell to generate events. Map-reduce also examines every cell, even when
 few cells change; however, its result collection and update work depend on
 the number of changes. Dense changes may make coordinate storage and
@@ -201,13 +201,194 @@ use.
 
 \subsection{Experimental Methodology}
 
+We investigated how memory strategy, worker count and board size affect
+runtime and allocation. Each of the three local distributors was tested
+with 1, 2, 4, 8, 12 and 16 workers on the supplied $128\times128$ and
+$512\times512$ images - 36 configurations in total. Comparisons between
+strategies would keep the image and worker count fixed; while scaling comparisons varies
+workers within the same strategy and image. The images contain different
+patterns, so comparisons between sizes also reflect differences in activity.
+
+Every benchmark operation restarted the original image and simulated
+100 turns. Measurements used Go 1.25.0 on WSL2 with an Intel i7-10750H
+(six cores, twelve logical CPUs), \texttt{GOMAXPROCS=12} and normal garbage
+collection. Each configuration had five samples with a one-second benchmark
+target per sample. We report median runtime, cumulative allocated bytes and
+allocation count per operation. Range bars show observed minima and maxima,
+not confidence intervals.
+
+Speedup measures how much faster a configuration completes the same workload
+than its one-worker baseline. For strategy $s$, board size $b$ and worker
+count $n$, we calculate
+\[
+S_{s,b}(n)=\frac{T_{s,b}(1)}{T_{s,b}(n)},
+\]
+where $T_{s,b}(n)$ is the median runtime of five samples for a fresh
+100-turn simulation. Both times use the same units, so these cancel:
+speedup is dimensionless and is reported as a multiplier, such as
+$2\times$, rather than in milliseconds or as a percentage. A speedup of
+$2\times$ means the same workload takes half the one-worker time;
+$1\times$ means no change, and a value below $1\times$ means a slowdown.
+For example, double buffer on $512\times512$ takes 1180.22\,ms with
+one worker and 306.95\,ms with twelve, giving
+$1180.22/306.95\approx3.84\times$ speedup.
+
+Each strategy and board size has its own one-worker baseline. The plotted
+speedup therefore measures scaling within an implementation, rather than
+speed relative to another strategy or to the independent serial correctness
+reference. It is calculated from the ratio of sample medians, not the median
+of paired sample ratios. Ideal linear scaling would give $S(n)=n$; for
+example, $12\times$ at twelve workers. Smaller gains reflect the combined
+effect of work that remains serial, coordination costs and available
+hardware resources. Because baseline runtimes differ between strategies,
+we interpret speedup alongside absolute runtime when comparing them.
+
+The benchmark runs the actual local distributors with in-memory I/O and an
+event consumer. Timing includes channel setup, board allocation, initial
+pixel transfer, calculation and coordination, event handling, final alive-list
+construction and final pixel transfer. Input-file reading, disk output, SDL
+rendering and reference validation are excluded. The results therefore
+measure the simulation with event handling; they do not isolate the
+cell-update kernel. Allocation totals also include the harness.
+
+Before timing, all 36 configurations matched an independent serial reference
+for the final board and completed-turn counts. The $512\times512$ reference
+also matched the supplied 100-turn fixture. A separate recorded race-detector
+run passed at 1, 4 and 12 workers for both sizes and all strategies. This
+provides evidence for the measured calculation paths, but does not verify
+keyboard handling, SDL behaviour or every worker configuration under the
+race detector.
+
 \subsection{Performance and Scaling}
+
+\paragraph{Increasing workers gives diminishing benefit.}
+All three strategies become substantially faster as workers are added, but
+improvement generally levels off around 8-12 workers
+(Figure~\ref{fig:parallel-runtime}). On $128\times128$, the lowest full-run
+median for each strategy occurred at 12 workers: 28.54\,ms for heap
+allocation, 27.45\,ms for double buffer and 27.79\,ms for map-reduce.
+None improved at 16 workers. On $512\times512$, heap allocation and
+map-reduce still improved slightly from 12 to 16 workers (309.06 to
+302.70\,ms and 342.00 to 333.71\,ms), whereas double buffer rises
+from 306.95 to 320.10\,ms. Thus 8-12 workers marks worse returns,
+rather than always improving. Double buffer and map-reduce have close
+medians and overlapping sample ranges, so these measurements do not
+conclude which is the better method.
+
+Adding workers divides the cell calculations into smaller pieces, but other
+work still takes time. The coordinator collects results and sends events
+sequentially. Each turn also requires creating workers and waiting for all
+of them to finish. As workers receive less calculation, these remaining
+costs can limit further improvement. With \texttt{GOMAXPROCS=12}, at most
+twelve goroutines can execute Go code at once, so sixteen workers must
+share the available execution slots. These factors could explain why
+adding workers eventually gives little benefit, but we would need profiling
+to determine which factor has the greatest effect.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.49\linewidth]{benchmarks/runtime.pdf}\hfill
+\includegraphics[width=0.49\linewidth]{benchmarks/speedup.pdf}
+\captionsetup{font=small}
+\caption{Runtime (left) and derived speedup (right), varying workers and
+strategy for each board size. Runtime bars span the five-sample range;
+speedup uses each strategy's own one-worker median at the same size.}
+\label{fig:parallel-runtime}
+\end{figure}
+
+\paragraph{The larger input benefits more from parallel calculation.}
+At 12 workers, heap allocation's speedup rises from $1.83\times$ on
+$128\times128$ to $2.56\times$ on $512\times512$; map-reduce's rises from
+$2.56\times$ to $3.29\times$, and double buffer's from $2.71\times$
+to $3.84\times$. More calculation per turn can spread coordination costs
+over more work. However, the larger input also contains a different pattern,
+so this comparison cannot isolate the effect of board size. Its 16-fold
+increase in cell count produces runtime increases of approximately
+$10.8\times$, $11.2\times$ and $12.3\times$ for heap allocation, double
+buffering and map-reduce respectively at 12 workers. These workload
+comparisons do not establish sublinear complexity in cell count.
+
+\paragraph{Greater speedup does not necessarily mean lower runtime.}
+On $512\times512$ at 12 workers, map-reduce achieves $3.29\times$ speedup
+and heap allocation $2.56\times$, yet heap allocation is faster in absolute
+terms: 309.06\,ms compared with 342.00\,ms. Heap allocation starts from a
+faster one-worker baseline. Double buffer achieves $3.84\times$ speedup
+and a 306.95\,ms median, close to heap allocation, although its sample
+range is wider (304.55--409.39\,ms versus 301.62--313.37\,ms).
+The baselines also use different paths: heap allocation launches a strip
+worker, whereas double buffer and map-reduce calculate directly on the
+full board. Their transition from one to two workers therefore changes
+both worker count and execution path. Speedup describes scaling relative
+to these baselines; absolute runtime is needed to compare strategies.
 
 \subsection{Allocation and Memory Behaviour}
 
-\subsection{Focused Investigation}
+\paragraph{Double buffer consistently allocates fewer bytes.}
+At matched size and worker count, double buffer has the lowest cumulative
+allocation throughout the measured configurations
+(Figure~\ref{fig:parallel-allocation}). At 12 workers on $512\times512$,
+it allocates 9.90\,MiB per 100-turn simulation, compared with 38.42\,MiB
+for heap allocation and 25.92\,MiB for map-reduce. The corresponding
+$128\times128$ totals are 0.73, 3.31 and 1.92\,MiB. Reusing the two
+boards avoids the repeated output-strip allocation of the heap strategy.
+Map-reduce avoids replacement boards, but its workers still allocate local
+coordinate lists. These totals measure cumulative allocation, not peak RAM.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.49\linewidth]{benchmarks/memory.pdf}\hfill
+\includegraphics[width=0.49\linewidth]{benchmarks/allocations.pdf}
+\captionsetup{font=small}
+\caption{Median cumulative allocated bytes (left) and allocation counts
+(right) per 100-turn simulation, varying strategy and workers at each size.
+Allocated bytes do not measure peak RAM.}
+\label{fig:parallel-allocation}
+\end{figure}
+
+\paragraph{More workers increase allocation counts without a matching rise in bytes.}
+On $512\times512$, increasing workers from 1 to 16 raises allocation counts
+from approximately 432,000 to 440,000 for heap allocation, 381,000 to 383,000
+for double buffer, and 382,000 to 399,000 for map-reduce. The smaller
+input shows the same upward trend. Extra worker coordination and result
+objects each turn are consistent with this increase. Yet allocated bytes
+remain near 38--39\,MiB for heap allocation and roughly 10--11\,MiB for
+double buffer. Map-reduce's bytes fall from 33.05\,MiB at one worker
+to a minimum of 25.65\,MiB at eight, then rise to 26.34\,MiB at sixteen.
+Partitioning changes the local lists and their capacities, which could
+contribute to this behaviour; the measurements do not isolate the cause.
+The two graphs consequently distinguish the number of allocations from
+their combined size: more allocations can coexist with fewer total bytes.
+
+\paragraph{Larger inputs increase allocation, but allocation alone does not predict speed.}
+At 12 workers, moving to the larger input increases allocated bytes by
+roughly 12--14 times across the strategies. Allocation counts rise by about
+11 times for heap allocation and 16 times for the other two. Board storage,
+row objects, events and change lists contribute differently, so these
+outcomes need not scale identically with cell count. The different patterns
+also affect event and coordinate-list workloads. Although double buffer
+allocates substantially fewer bytes, it is not consistently fastest in the
+full-run timings. Without garbage-collector traces or profiles, we cannot
+attribute runtime differences to garbage collection or estimate how much
+time it consumes.
 
 \subsection{Findings and Limitations}
+
+The measurements support two main findings: adding workers substantially
+reduces runtime before improvement levels off, and double buffer reduces
+cumulative allocated bytes across the measured workloads. Runtime rankings vary between the full run and the separate confirmation
+measurements. Strategy choice
+therefore involves both allocation behaviour and measured runtime;
+these results do not identify one strategy as best under all conditions.
+
+The scope is limited to two supplied patterns over their first 100 turns.
+No controlled density experiment or separate event-generation benchmark
+was performed, so the effects of activity and event delivery cannot be
+separated from calculation. Fixed benchmark order and uncontrolled WSL
+host conditions may bias comparisons. Finally, differences in single-worker
+paths and strip construction mean that these are comparisons of complete
+implementations; memory policy is not the only implementation detail that
+varies. Further profiling and controlled pattern experiments would be
+needed to explain the observed costs more precisely.
 
 \section{Distributed Implementation}
 
