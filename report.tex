@@ -1,0 +1,521 @@
+% Compile with: latexmk -pdf report.tex
+% Submit report.pdf; maximum six pages total, with no cover page.
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=20mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+
+\title{Game of Life: Parallel and Distributed Implementations}
+\author{Gia Luong Vu --- hw25288 \and [Name 2] --- [Username 2] \and [Name 3] --- [Username 3]}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Parallel Implementation}
+
+\subsection{Functionality and Correctness}
+
+Our primary parallel implementation uses map-reduce to evolve a two-dimensional
+board whose cells are represented by bytes: 255 for alive and 0 for dead.
+Each cell's next state depends on its eight neighbours. Both dimensions wrap
+around, producing a toroidal board. The board dimensions, number of turns,
+and requested worker count are supplied through \texttt{gol.Params}.
+
+The implementation reports initial live cells and subsequent cell changes
+through an event channel, allowing SDL to display progress. It also supports
+PGM snapshots, pause/resume (\texttt{p}), saving (\texttt{s}), and quitting
+with output (\texttt{q}). A two-second ticker requests an alive-cell count;
+the simulation loop handles this request between turns, so reporting can be
+delayed by a long turn or blocked event delivery. Normal completion outputs
+the final board and waits for I/O completion before emitting
+\texttt{ImageOutputComplete} and the \texttt{Quitting} state. The final
+simulation-result event itself is emitted before image writing.
+
+% Add actual correctness evidence here: supplied tests, worker/board
+% configurations, race-detector command and results, and known limitations.
+% The functionality above describes code paths; it is not a claim that all
+% tests pass. Keep this distinction until verification is complete.
+
+\subsection{Concurrency and Synchronisation}
+
+\paragraph{Distributor architecture.}
+The distributor connects the PGM I/O and SDL components to the simulation logic. 
+It allocates the board, receives image pixels through the
+I/O input channel, and emits initial live-cell events to populate the display.
+The map-reduce entry point supplies a \texttt{completeTurn} callback, separating
+turn calculation from the distributor's common control and output workflow.
+
+The distributor then runs two concurrent loops. One call 
+\texttt{wg.Go(loopFn)} to start a simulation goroutine, while the original
+execution continues running in an outer loop to receive keyboard input and completion
+notifications. The outer loop forwards save, pause, and quit commands through
+unbuffered internal channels and  doesn't modify the board. The simulation
+loop processes board updates and accepts commands between generations. This
+prevents control handlers from independently accessing a board
+while workers are calculating its next state. Figure~\ref{fig:parallel-flow}
+shows the main communication paths.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=10mm and 24mm,
+  box/.style={draw,rounded corners,align=center,font=\small,
+              minimum width=33mm,minimum height=10mm},
+  flow/.style={-{Latex},thick},
+  every edge quotes/.style={font=\scriptsize}]
+\node[box] (outer) {Outer distributor\\keyboard/control loop};
+\node[box,right=of outer] (sim) {Simulation loop};
+\node[box,right=of sim] (workers) {Strip workers\\read-only map phase};
+\node[box,below=of outer] (sdl) {Supplied SDL loop};
+\node[box,below=20mm of sim] (io) {Supplied I/O goroutine};
+\draw[flow] (sdl) -- node[left,font=\scriptsize]{keys} (outer);
+\draw[flow] (outer.north east) to[bend left=15]
+  node[above,font=\scriptsize]{commands} (sim.north west);
+\draw[flow] (sim.south west) to[bend left=15]
+  node[below,font=\scriptsize]{normal completion} (outer.south east);
+\draw[flow] (sim.north east) to[bend left=15]
+  node[above,font=\scriptsize]{launch / shared strips} (workers.north west);
+\draw[flow] (workers.south west) to[bend left=15]
+  node[below,font=\scriptsize]{changed coordinates} (sim.south east);
+\draw[flow] (sim.south) -- node[below,sloped,font=\scriptsize]{events} (sdl.east);
+\draw[flow] (sim.south) -- node[right,pos=0.75,font=\scriptsize]{I/O channels} (io.north);
+\end{tikzpicture}
+\captionsetup{font=small}
+\caption{Parallel execution roles. }
+\label{fig:parallel-flow}
+\end{figure}
+
+Worker results and control signals use channels; workers share references to board rows. 
+The I/O link summarises separate command, data, and acknowledgement channels. A helper goroutine
+(not shown) waits for worker completion.
+
+\paragraph{Map-reduce architecture.}
+For multiple workers, the \texttt{startWorkersMapReduce} divides the
+board into horizontal strips, distributing remainder rows when the height
+is not divisible by the worker count. Each strip also includes read-only halo
+rows above and below; this with the wrap-around indices make sure all neighbours 
+are covered within a cell. A starting-row offset maps local results to global
+coordinates. Repeated \texttt{wg.Go(...)} calls launch calculation goroutines,
+which Go may execute in parallel according to available CPU resources and
+\texttt{GOMAXPROCS}. Each worker reads the current generation, builds a local
+change list, and sends its coordinates through a shared buffered channel \texttt{cellFlippedChan}.
+For one worker, the change list is calculated directly by the
+simulation goroutine.
+
+The simulation goroutine collects coordinates while workers run, allowing
+workers to continue sending when the channel would otherwise fill. A separate
+wait group tracks these workers. A helper goroutine waits for their return,
+signals completion, and closes the result channel; the collector drains any
+remaining results before modifying the board. Worker completion indicates
+that shared reading have finished, while draining indicates that all results
+have been received. The reduce phase then applies the flips in place. This
+ordering preserves a single input generation without per-cell locks.
+
+The collected-coordinate buffer is reused between turns. Its entries also
+produce \texttt{CellFlipped} events, avoiding a separate full-board comparison.
+After the callback returns, the distributor increments the completed-turn
+counter and emits \texttt{TurnComplete}. Collection, applying flips, and event
+delivery remain in serial; worker goroutines and local change lists are
+still created each turn.
+
+\paragraph{Controls and periodic reporting.}
+The simulation loop selects a ready command or ticker event; when none is
+ready, its \texttt{default} branch calculates another turn unless paused.
+The branches execute sequentially and have no fixed priority. Pause suppresses
+new turns while save, quit, and reporting remain available. Because commands
+cannot interrupt \texttt{completeTurn}, snapshots and counts refer to complete
+generations, but command response time depends on turn duration. The ticker
+requests alive-cell reporting every two seconds rather than pacing the
+simulation. Long turns or blocked event delivery can delay these reports.
+The current paused loop continues polling through \texttt{default}, so it
+can consume CPU while no generation is being calculated.
+
+\paragraph{Output and termination.}
+Saving streams the stable board to the I/O goroutine and waits for its idle
+acknowledgement before emitting \texttt{ImageOutputComplete}. Normal
+completion and user quit take different paths: after the requested turns,
+the simulation sends \texttt{doneSig}, returns, and the outer loop joins it
+before performing final output. On quit, the simulation performs final output
+itself; \texttt{quitFlag} prevents the outer loop from repeating it. The
+distributor's \texttt{wg.Wait()} tracks the simulation loop, whereas the
+map-reduce wait group tracks calculation workers. Joining the simulation
+ensures it has returned before the event channel closes. In the exit helper,
+\texttt{FinalTurnComplete} precedes image writing; \texttt{ImageOutputComplete}
+and \texttt{Quitting} follow the I/O acknowledgement.
+
+% Add verification evidence to the evaluation before claiming deadlock freedom.
+% In particular, investigate control requests at natural completion: opposing
+% unbuffered command and doneSig sends can leave both loops blocked.
+
+\subsection{Memory Strategies}
+
+All three strategies use the same Game of Life rules and common distributor
+control logic. They differ in how workers represent and combine next-state
+results. This allows the evaluation to compare allocation, synchronisation,
+and event-generation costs under a common workload.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}lXX@{}}
+\toprule
+Strategy & Result storage & Coordination and event generation \\
+\midrule
+Heap allocation & Each worker allocates a fresh output strip each turn;
+the coordinator assembles the returned row references. & Receive all strips,
+compare the old and new boards, then replace the current board. \\
+Double buffer & Two boards retain their pixel storage; workers write
+disjoint destination strips. & Wait for completion, compare the boards for
+changed cells, then swap source and destination references. \\
+Map-reduce (primary) & Workers allocate local change lists; the coordinator
+reuses its collected-coordinate buffer. & Collect all coordinates before
+applying changes in place; reuse them for flipped-cell events. \\
+\bottomrule
+\end{tabularx}
+\caption{Memory ownership and per-turn coordination in the three strategies.}
+\end{table}
+
+Heap allocation is expected to incur repeated board-result allocation,
+whereas double buffer avoids that allocation but still compares every
+cell to generate events. Map-reduce also examines every cell, even when
+few cells change; however, its result collection and update work depend on
+the number of changes. Dense changes may make coordinate storage and
+per-coordinate channel operations expensive. These are design expectations;
+the evaluation must establish their effect on measured runtime and memory
+use.
+
+\section{Parallel Evaluation}
+
+\subsection{Experimental Methodology}
+
+We investigated how memory strategy, worker count and board size affect
+runtime and allocation. Each of the three local distributors was tested
+with 1, 2, 4, 8, 12 and 16 workers on the supplied $128\times128$ and
+$512\times512$ images - 36 configurations in total. Comparisons between
+strategies would keep the image and worker count fixed; while scaling comparisons varies
+workers within the same strategy and image. The images contain different
+patterns, so comparisons between sizes also reflect differences in activity.
+
+Every benchmark operation restarted the original image and simulated
+100 turns. Measurements used Go 1.25.0 on WSL2 with an Intel i7-10750H
+(six cores, twelve logical CPUs), \texttt{GOMAXPROCS=12} and normal garbage
+collection. Each configuration had five samples with a one-second benchmark
+target per sample. We report median runtime, cumulative allocated bytes and
+allocation count per operation. Range bars show observed minima and maxima,
+not confidence intervals.
+
+Speedup measures how much faster a configuration completes the same workload
+than its one-worker baseline. For strategy $s$, board size $b$ and worker
+count $n$, we calculate
+\[
+S_{s,b}(n)=\frac{T_{s,b}(1)}{T_{s,b}(n)},
+\]
+where $T_{s,b}(n)$ is the median runtime of five samples for a fresh
+100-turn simulation. Both times use the same units, so these cancel:
+speedup is dimensionless and is reported as a multiplier, such as
+$2\times$, rather than in milliseconds or as a percentage. A speedup of
+$2\times$ means the same workload takes half the one-worker time;
+$1\times$ means no change, and a value below $1\times$ means a slowdown.
+For example, double buffer on $512\times512$ takes 1180.22\,ms with
+one worker and 306.95\,ms with twelve, giving
+$1180.22/306.95\approx3.84\times$ speedup.
+
+Each strategy and board size has its own one-worker baseline. The plotted
+speedup therefore measures scaling within an implementation, rather than
+speed relative to another strategy or to the independent serial correctness
+reference. It is calculated from the ratio of sample medians, not the median
+of paired sample ratios. Ideal linear scaling would give $S(n)=n$; for
+example, $12\times$ at twelve workers. Smaller gains reflect the combined
+effect of work that remains serial, coordination costs and available
+hardware resources. Because baseline runtimes differ between strategies,
+we interpret speedup alongside absolute runtime when comparing them.
+
+The benchmark runs the actual local distributors with in-memory I/O and an
+event consumer. Timing includes channel setup, board allocation, initial
+pixel transfer, calculation and coordination, event handling, final alive-list
+construction and final pixel transfer. Input-file reading, disk output, SDL
+rendering and reference validation are excluded. The results therefore
+measure the simulation with event handling; they do not isolate the
+cell-update kernel. Allocation totals also include the harness.
+
+Before timing, all 36 configurations matched an independent serial reference
+for the final board and completed-turn counts. The $512\times512$ reference
+also matched the supplied 100-turn fixture. A separate recorded race-detector
+run passed at 1, 4 and 12 workers for both sizes and all strategies. This
+provides evidence for the measured calculation paths, but does not verify
+keyboard handling, SDL behaviour or every worker configuration under the
+race detector.
+
+\subsection{Performance and Scaling}
+
+\paragraph{Increasing workers gives diminishing benefit.}
+All three strategies become substantially faster as workers are added, but
+improvement generally levels off around 8-12 workers
+(Figure~\ref{fig:parallel-runtime}). On $128\times128$, the lowest full-run
+median for each strategy occurred at 12 workers: 28.54\,ms for heap
+allocation, 27.45\,ms for double buffer and 27.79\,ms for map-reduce.
+None improved at 16 workers. On $512\times512$, heap allocation and
+map-reduce still improved slightly from 12 to 16 workers (309.06 to
+302.70\,ms and 342.00 to 333.71\,ms), whereas double buffer rises
+from 306.95 to 320.10\,ms. Thus 8-12 workers marks worse returns,
+rather than always improving. Double buffer and map-reduce have close
+medians and overlapping sample ranges, so these measurements do not
+conclude which is the better method.
+
+Adding workers divides the cell calculations into smaller pieces, but other
+work still takes time. The coordinator collects results and sends events
+sequentially. Each turn also requires creating workers and waiting for all
+of them to finish. As workers receive less calculation, these remaining
+costs can limit further improvement. With \texttt{GOMAXPROCS=12}, at most
+twelve goroutines can execute Go code at once, so sixteen workers must
+share the available execution slots. These factors could explain why
+adding workers eventually gives little benefit, but we would need profiling
+to determine which factor has the greatest effect.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.49\linewidth]{benchmarks/runtime.pdf}\hfill
+\includegraphics[width=0.49\linewidth]{benchmarks/speedup.pdf}
+\captionsetup{font=small}
+\caption{Runtime (left) and derived speedup (right), varying workers and
+strategy for each board size. Runtime bars span the five-sample range;
+speedup uses each strategy's own one-worker median at the same size.}
+\label{fig:parallel-runtime}
+\end{figure}
+
+\paragraph{The larger input benefits more from parallel calculation.}
+At 12 workers, heap allocation's speedup rises from $1.83\times$ on
+$128\times128$ to $2.56\times$ on $512\times512$; map-reduce's rises from
+$2.56\times$ to $3.29\times$, and double buffer's from $2.71\times$
+to $3.84\times$. More calculation per turn can spread coordination costs
+over more work. However, the larger input also contains a different pattern,
+so this comparison cannot isolate the effect of board size. Its 16-fold
+increase in cell count produces runtime increases of approximately
+$10.8\times$, $11.2\times$ and $12.3\times$ for heap allocation, double
+buffering and map-reduce respectively at 12 workers. These workload
+comparisons do not establish sublinear complexity in cell count.
+
+\paragraph{Greater speedup does not necessarily mean lower runtime.}
+On $512\times512$ at 12 workers, map-reduce achieves $3.29\times$ speedup
+and heap allocation $2.56\times$, yet heap allocation is faster in absolute
+terms: 309.06\,ms compared with 342.00\,ms. Heap allocation starts from a
+faster one-worker baseline. Double buffer achieves $3.84\times$ speedup
+and a 306.95\,ms median, close to heap allocation, although its sample
+range is wider (304.55--409.39\,ms versus 301.62--313.37\,ms).
+The baselines also use different paths: heap allocation launches a strip
+worker, whereas double buffer and map-reduce calculate directly on the
+full board. Their transition from one to two workers therefore changes
+both worker count and execution path. Speedup describes scaling relative
+to these baselines; absolute runtime is needed to compare strategies.
+
+\subsection{Allocation and Memory Behaviour}
+
+\paragraph{Double buffer consistently allocates fewer bytes.}
+At matched size and worker count, double buffer has the lowest cumulative
+allocation throughout the measured configurations
+(Figure~\ref{fig:parallel-allocation}). At 12 workers on $512\times512$,
+it allocates 9.90\,MiB per 100-turn simulation, compared with 38.42\,MiB
+for heap allocation and 25.92\,MiB for map-reduce. The corresponding
+$128\times128$ totals are 0.73, 3.31 and 1.92\,MiB. Reusing the two
+boards avoids the repeated output-strip allocation of the heap strategy.
+Map-reduce avoids replacement boards, but its workers still allocate local
+coordinate lists. These totals measure cumulative allocation, not peak RAM.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.49\linewidth]{benchmarks/memory.pdf}\hfill
+\includegraphics[width=0.49\linewidth]{benchmarks/allocations.pdf}
+\captionsetup{font=small}
+\caption{Median cumulative allocated bytes (left) and allocation counts
+(right) per 100-turn simulation, varying strategy and workers at each size.
+Allocated bytes do not measure peak RAM.}
+\label{fig:parallel-allocation}
+\end{figure}
+
+\paragraph{More workers increase allocation counts without a matching rise in bytes.}
+On $512\times512$, increasing workers from 1 to 16 raises allocation counts
+from approximately 432,000 to 440,000 for heap allocation, 381,000 to 383,000
+for double buffer, and 382,000 to 399,000 for map-reduce. The smaller
+input shows the same upward trend. Extra worker coordination and result
+objects each turn are consistent with this increase. Yet allocated bytes
+remain near 38--39\,MiB for heap allocation and roughly 10--11\,MiB for
+double buffer. Map-reduce's bytes fall from 33.05\,MiB at one worker
+to a minimum of 25.65\,MiB at eight, then rise to 26.34\,MiB at sixteen.
+Partitioning changes the local lists and their capacities, which could
+contribute to this behaviour; the measurements do not isolate the cause.
+The two graphs consequently distinguish the number of allocations from
+their combined size: more allocations can coexist with fewer total bytes.
+
+\paragraph{Larger inputs increase allocation, but allocation alone does not predict speed.}
+At 12 workers, moving to the larger input increases allocated bytes by
+roughly 12--14 times across the strategies. Allocation counts rise by about
+11 times for heap allocation and 16 times for the other two. Board storage,
+row objects, events and change lists contribute differently, so these
+outcomes need not scale identically with cell count. The different patterns
+also affect event and coordinate-list workloads. Although double buffer
+allocates substantially fewer bytes, it is not consistently fastest in the
+full-run timings. Without garbage-collector traces or profiles, we cannot
+attribute runtime differences to garbage collection or estimate how much
+time it consumes.
+
+\subsection{Findings and Limitations}
+
+The measurements support two main findings: adding workers substantially
+reduces runtime before improvement levels off, and double buffer reduces
+cumulative allocated bytes across the measured workloads. Runtime rankings vary between the full run and the separate confirmation
+measurements. Strategy choice
+therefore involves both allocation behaviour and measured runtime;
+these results do not identify one strategy as best under all conditions.
+
+The scope is limited to two supplied patterns over their first 100 turns.
+No controlled density experiment or separate event-generation benchmark
+was performed, so the effects of activity and event delivery cannot be
+separated from calculation. Fixed benchmark order and uncontrolled WSL
+host conditions may bias comparisons. Finally, differences in single-worker
+paths and strip construction mean that these are comparisons of complete
+implementations; memory policy is not the only implementation detail that
+varies. Further profiling and controlled pattern experiments would be
+needed to explain the observed costs more precisely.
+
+\section{Distributed Implementation}
+
+\subsection{Functionality and System Design}
+
+Our distributed implementation separates the local controller, broker and
+worker services. The controller reads the input image, writes PGM output,
+handles keyboard input and passes events to SDL. The broker owns the current
+board and coordinates its evolution. Workers calculate changes for assigned
+strips and return their results to the broker. Communication uses Go's
+\texttt{net/rpc} over TCP. The controller obtains the broker address from
+\texttt{brokerURL.txt}; the broker reads worker addresses from
+\texttt{workerURLs.txt}.
+
+The broker keeps control and board ownership in one place so workers can
+focus on cell calculation. For multiple workers, each turn is divided into
+horizontal strips with neighbouring halo rows. Workers return coordinates
+of cells that need to change, rather than replacement boards. The broker
+collects all results before applying the flips, so every worker calculates
+from the same generation. This extends the local map-reduce design across
+processes, although transmitting coordinates can be expensive when many
+cells change.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=12mm and 24mm,
+  box/.style={draw,rounded corners,align=center,font=\small,
+              minimum width=35mm,minimum height=12mm},
+  flow/.style={-{Latex},thick}]
+\node[box] (client) {Local controller\\PGM, keys and SDL};
+\node[box,right=of client] (broker) {Broker\\board and turn coordination};
+\node[box,right=of broker] (workers) {Worker services\\strip calculations};
+\draw[flow] (client.north east) to[bend left=20]
+ node[above,font=\scriptsize]{initial board / commands} (broker.north west);
+\draw[flow] (broker.south west) to[bend left=20]
+ node[below,font=\scriptsize]{turn changes / snapshots} (client.south east);
+\draw[flow] (broker.north east) to[bend left=20]
+ node[above,font=\scriptsize]{strips with halo rows} (workers.north west);
+\draw[flow] (workers.south west) to[bend left=20]
+ node[below,font=\scriptsize]{changed coordinates} (broker.south east);
+\end{tikzpicture}
+\captionsetup{font=small}
+\caption{Distributed roles and network messages. Worker calculations run
+concurrently; the broker combines their results before advancing the board.}
+\label{fig:distributed-flow}
+\end{figure}
+
+The local two-worker setup passed \texttt{TestGol}, \texttt{TestPgm},
+\texttt{TestKeyboard} and \texttt{TestAlive} in manual verification.
+\texttt{TestGol} compares final boards with supplied fixtures for three
+image sizes and 0, 1 and 100 turns. A separate manual check confirmed that
+\texttt{k} saved output and stopped the client, broker and workers.
+These results establish behaviour in the tested local setup; they do not
+establish correctness under network failures or performance on AWS.
+
+\subsection{Communication and Control}
+
+\paragraph{Starting and calculating turns.}
+The controller starts a run by sending the parameters and initial board
+through the \texttt{ProcessStart} RPC. The broker connects to the configured worker
+addresses and reuses those connections during the simulation. At each turn,
+it sends each worker its strip, two halo rows and a starting-row offset.
+The halo rows supply neighbours across strip boundaries, including vertical
+wrap-around; the offset converts local coordinates to global board positions.
+Workers return lists of changed cells. They do not exchange messages directly
+with one another or retain their own evolving board between requests.
+Consequently, the broker sends strip pixels again each turn.
+
+The configured address count determines the number of strips; the
+controller's requested \texttt{Threads} value does not select the number of
+remote workers. There is also a special case: with one address, the shared
+map-reduce helper calculates the board locally in the broker. A connected
+worker is therefore not necessarily doing calculation. This case must be
+changed before using one remote worker as a distributed benchmark baseline.
+
+\paragraph{Displaying progress and returning output.}
+The controller repeatedly calls \texttt{Broker.ProcessNextTurn} to receive
+ordered batches of changed coordinates, producing \texttt{CellsFlipped}
+and \texttt{TurnComplete} events for SDL. Initial live cells are sent before
+the first \texttt{Executing} state. The broker copies each turn's coordinate
+list because its reducer reuses its buffer. A bounded channel limits queued
+batches, but also means a slow controller can hold up the simulation.
+Normal completion returns the final board and completed-turn count for
+local PGM output. Every two seconds the controller also requests an alive-cell
+count; this uses a copy of a board protected against concurrent updates.
+
+\paragraph{Keyboard controls.}
+Save (\texttt{s}), pause/resume (\texttt{p}) and quit (\texttt{q}) use separate
+RPC methods. Save returns a board copy and its turn number for local output.
+The engine handles these controls between turns, so snapshots describe
+complete generations and commands cannot interrupt an ongoing calculation.
+Quit returns a snapshot while leaving the servers available for another run.
+Kill (\texttt{k}) first stops the simulation and returns its snapshot; the
+controller waits for image output to finish before requesting worker and
+broker shutdown. This ordering lets the controller save the board before
+the services exit.
+
+\subsection{Extensions}
+
+\subsubsection{Halo Exchange and Further Improvements}
+
+\textit{To be completed: describe the extension implemented, how it differs
+from the broker sending strips with halo rows each turn, and the evidence
+used to evaluate it.}
+
+% Contributor notes: replace the placeholder above with the final description.
+% Explain ownership of each board partition, which halo rows are exchanged,
+% which components communicate, and when exchange happens relative to updates.
+% Describe wrap-around boundaries and how workers stay on the same generation.
+% If workers retain their partitions, distinguish this from the current
+% implementation, where the broker resends strips and workers return flips.
+% Add a diagram if useful, correctness checks and any measured performance.
+% Include other implemented improvements here; do not claim planned work is done.
+
+\section{Distributed Evaluation}
+
+\subsection{Methodology and Scaling}
+
+% Add the distributed benchmark setup, results and scaling analysis here.
+
+\subsection{Failure Behaviour and Limitations}
+
+% Add verified failure behaviour and limitations here.
+
+\section{Overall Findings}
+
+\section*{References}
+
+\end{document}

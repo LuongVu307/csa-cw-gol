@@ -1,0 +1,88 @@
+Recorded UTC: 2026-11-17T16:04:12.602531+00:00
+GOMAXPROCS for benchmark: 12
+GOCACHE: /tmp/cw1-go-cache
+Turns per operation: 100
+Samples per case: 5
+Target time per sample: 1s
+Environment: WSL; host load, power state and temperature are not controlled.
+
+$ git rev-parse HEAD
+009d072cd11731429837514f3b6eb3e1abfc9694
+
+
+$ git status --short
+?? benchmarks/
+?? gol/parallel_benchmark_test.go
+
+
+$ go version
+go version go1.25.0 linux/amd64
+
+
+$ uname -srmo
+Linux 6.18.58.1-microsoft-standard-WSL2 x86_64 GNU/Linux
+
+
+$ lscpu
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           39 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  12
+On-line CPU(s) list:                     0-11
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+CPU family:                              6
+Model:                                   165
+Thread(s) per core:                      2
+Core(s) per socket:                      6
+Socket(s):                               1
+Stepping:                                2
+BogoMIPS:                                5184.01
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm arch_perfmon rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq vmx ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow ept vpid ept_ad fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt xsaveopt xsavec xgetbv1 xsaves vnmi md_clear flush_l1d arch_capabilities
+Virtualization:                          VT-x
+Hypervisor vendor:                       Microsoft
+Virtualization type:                     full
+L1d cache:                               192 KiB (6 instances)
+L1i cache:                               192 KiB (6 instances)
+L2 cache:                                1.5 MiB (6 instances)
+L3 cache:                                12 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-11
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Mitigation; Aligned branch/return thunks
+Vulnerability Itlb multihit:             KVM: Mitigation: Split huge pages
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT Host state unknown
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Mitigation; Enhanced IBRS
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop
+Vulnerability Srbds:                     Unknown: Dependent on hypervisor status
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Not affected
+
+
+$ nproc
+12
+
+
+$ uptime
+16:04:12 up  4:00,  1 user,  load average: 0.51, 0.23, 0.29
+
+
+SHA-256 of benchmark source and input fixtures:
+533effacb27bcecb469e51abf608429a2c27949ab6659dfbcdd70f18e2fd8e5e  gol/parallel_benchmark_test.go
+87596898e4e2f9adc69192069cfafd58b4c7386381f4f366871cf978203b74ef  images/128x128.pgm
+507d6783f844ff0064986f47ae70ebf109a23a3e941f0a2979f0e35ef1527b0f  images/512x512.pgm
+2823119001ed0959e5294b2f123deb8af6f38058f6156721b6a2a625edeca690  check/images/512x512x100.pgm
+
+Full benchmark completed UTC: 2026-11-17T16:12:14.170963+00:00
+Confirmation completed UTC: 2026-11-17T16:14:24.832707+00:00

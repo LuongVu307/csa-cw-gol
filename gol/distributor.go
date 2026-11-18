@@ -505,6 +505,13 @@ func distributorQuitFilenameFn(x int, y int, turnsDone int) string {
 }
 
 func distributorExitFn(p Params, c distributorChannels, world [][]uint8, turnsDone int, filename string) {
+	distributorFinalOutputFn(p, c, world, turnsDone, filename)
+	c.events <- StateChange{turnsDone, Quitting}
+}
+
+// Complete output before announcing shutdown; distributed kill also waits for
+// remote shutdown between these steps so SDL cannot exit the controller early.
+func distributorFinalOutputFn(p Params, c distributorChannels, world [][]uint8, turnsDone int, filename string) {
 	c.events <- FinalTurnComplete{turnsDone, calculateAliveCells(p, world)}
 	c.ioCommand <- ioOutput
 	c.ioFilename <- filename
@@ -516,9 +523,6 @@ func distributorExitFn(p Params, c distributorChannels, world [][]uint8, turnsDo
 	<-c.ioIdle
 
 	c.events <- ImageOutputComplete{turnsDone, filename}
-
-	c.events <- StateChange{turnsDone, Quitting}
-
 }
 func distributorExitFn1D(p Params, c distributorChannels, world []uint8, turnsDone int, filename string) {
 	c.events <- FinalTurnComplete{turnsDone, calculateAliveCells1D(p, world)}

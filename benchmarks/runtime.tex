@@ -1,0 +1,28 @@
+\documentclass[tikz,border=4pt]{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{groupplots}
+\begin{document}
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=20mm},
+width=8cm,height=6cm,xlabel={Worker goroutines},
+ylabel={Time per 100-turn simulation (ms)},
+xtick={1,2,4,8,12,16},xmin=0.5,xmax=16.5,ymin=0,grid=major,
+legend style={font=\small,at={(0.5,-0.28)},anchor=north}]
+\nextgroupplot[title={128 x 128, 100 turns}]
+\addplot+[color=blue,mark=*,thick,error bars/.cd,y dir=both,y explicit] coordinates {(1,52.102379) += (0,6.512686) -= (0,0.430758) (2,36.733890) += (0,0.190348) -= (0,0.802662) (4,30.591593) += (0,0.616975) -= (0,0.202939) (8,28.867981) += (0,0.549094) -= (0,0.457321) (12,28.542165) += (0,0.714620) -= (0,0.193153) (16,29.342637) += (0,0.630317) -= (0,0.259254)};
+\addlegendentry{Heap allocation}
+\addplot+[color=red,mark=square*,thick,error bars/.cd,y dir=both,y explicit] coordinates {(1,74.374551) += (0,1.530393) -= (0,0.339625) (2,35.201567) += (0,0.421571) -= (0,0.526545) (4,30.165965) += (0,1.402136) -= (0,0.344579) (8,28.020821) += (0,2.153192) -= (0,0.877016) (12,27.445302) += (0,0.414643) -= (0,0.397869) (16,27.554218) += (0,0.696114) -= (0,0.120512)};
+\addlegendentry{Double buffer}
+\addplot+[color=teal,mark=triangle*,thick,error bars/.cd,y dir=both,y explicit] coordinates {(1,71.066898) += (0,1.152805) -= (0,0.062490) (2,33.394890) += (0,0.798535) -= (0,0.223568) (4,29.427393) += (0,0.769461) -= (0,0.038723) (8,28.195399) += (0,0.220086) -= (0,0.412415) (12,27.786567) += (0,0.748779) -= (0,0.075786) (16,28.269075) += (0,1.473884) -= (0,0.111796)};
+\addlegendentry{Map-reduce}
+\nextgroupplot[title={512 x 512, 100 turns}]
+\addplot+[color=blue,mark=*,thick,error bars/.cd,y dir=both,y explicit] coordinates {(1,789.828306) += (0,8.320858) -= (0,2.096233) (2,505.115788) += (0,3.493828) -= (0,5.429065) (4,368.639242) += (0,25.054973) -= (0,5.208438) (8,325.753034) += (0,12.338752) -= (0,4.918146) (12,309.057212) += (0,4.309066) -= (0,7.441132) (16,302.700748) += (0,4.599146) -= (0,2.828581)};
+\addlegendentry{Heap allocation}
+\addplot+[color=red,mark=square*,thick,error bars/.cd,y dir=both,y explicit] coordinates {(1,1180.222445) += (0,34.009339) -= (0,21.570081) (2,494.418549) += (0,7.290371) -= (0,2.966089) (4,365.224965) += (0,6.734046) -= (0,9.392869) (8,336.708872) += (0,20.650805) -= (0,11.238813) (12,306.952706) += (0,102.438019) -= (0,2.398778) (16,320.102701) += (0,29.775554) -= (0,14.355457)};
+\addlegendentry{Double buffer}
+\addplot+[color=teal,mark=triangle*,thick,error bars/.cd,y dir=both,y explicit] coordinates {(1,1125.619643) += (0,6.792591) -= (0,20.494099) (2,505.881068) += (0,3.777490) -= (0,3.888362) (4,382.414083) += (0,12.683091) -= (0,16.032804) (8,344.572874) += (0,17.098530) -= (0,5.972888) (12,342.004570) += (0,4.708160) -= (0,7.600044) (16,333.710151) += (0,0.935695) -= (0,8.539246)};
+\addlegendentry{Map-reduce}
+\end{groupplot}
+\end{tikzpicture}
+\end{document}

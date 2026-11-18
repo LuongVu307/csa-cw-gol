@@ -1,0 +1,36 @@
+goos: linux
+goarch: amd64
+pkg: uk.ac.bris.cs/gameoflife/gol
+cpu: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+BenchmarkParallel/size=512/strategy=double/workers=8-12         	       4	 323403962 ns/op	10487848 B/op	  381832 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=8-12         	       4	 313276102 ns/op	10482936 B/op	  381820 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=8-12         	       3	 412143601 ns/op	10482778 B/op	  381821 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=8-12         	       3	 348532631 ns/op	10481178 B/op	  381815 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=8-12         	       4	 363734683 ns/op	10481032 B/op	  381815 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12        	       4	 289656826 ns/op	10388452 B/op	  382221 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12        	       4	 288233948 ns/op	10385296 B/op	  382218 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12        	       4	 316560501 ns/op	10385224 B/op	  382215 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12        	       4	 290138523 ns/op	10385048 B/op	  382216 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12        	       4	 301897487 ns/op	10385056 B/op	  382216 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=16-12        	       4	 290861001 ns/op	10365760 B/op	  382615 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=16-12        	       4	 303173777 ns/op	10365656 B/op	  382614 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=16-12        	       4	 303917129 ns/op	10365824 B/op	  382614 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=16-12        	       4	 296549425 ns/op	10365744 B/op	  382615 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=16-12        	       4	 310355936 ns/op	10365744 B/op	  382615 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=8-12      	       4	 346640718 ns/op	26896072 B/op	  390659 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=8-12      	       3	 335804856 ns/op	26893120 B/op	  390631 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=8-12      	       4	 302401744 ns/op	26894376 B/op	  390641 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=8-12      	       4	 304317414 ns/op	26893552 B/op	  390635 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=8-12      	       4	 316826814 ns/op	26894752 B/op	  390648 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12     	       4	 322583664 ns/op	27179840 B/op	  394782 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12     	       4	 326247003 ns/op	27179024 B/op	  394774 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12     	       4	 329107674 ns/op	27179168 B/op	  394775 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12     	       4	 340385352 ns/op	27180800 B/op	  394792 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12     	       4	 341558297 ns/op	27179560 B/op	  394779 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=16-12     	       3	 345379070 ns/op	27616458 B/op	  398787 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=16-12     	       4	 319718531 ns/op	27616592 B/op	  398788 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=16-12     	       3	 339314056 ns/op	27613568 B/op	  398757 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=16-12     	       3	 346871755 ns/op	27614176 B/op	  398763 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=16-12     	       3	 344257648 ns/op	27617109 B/op	  398793 allocs/op
+PASS
+ok  	uk.ac.bris.cs/gameoflife/gol	74.444s

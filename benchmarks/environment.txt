@@ -1,0 +1,67 @@
+Started UTC: 2026-11-18T04:33:24.598939+00:00
+GOMAXPROCS=12; 100 turns/op; 5 samples/case; benchtime=1s; normal GC
+Full matrix followed by separate confirmation; no concurrent benchmark cases.
+
+$ go version
+go version go1.25.0 linux/amd64
+
+$ uname -srmo
+Linux 6.18.58.1-microsoft-standard-WSL2 x86_64 GNU/Linux
+
+$ lscpu
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           39 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  12
+On-line CPU(s) list:                     0-11
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+CPU family:                              6
+Model:                                   165
+Thread(s) per core:                      2
+Core(s) per socket:                      6
+Socket(s):                               1
+Stepping:                                2
+BogoMIPS:                                5184.01
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm arch_perfmon rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq vmx ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow ept vpid ept_ad fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt xsaveopt xsavec xgetbv1 xsaves vnmi md_clear flush_l1d arch_capabilities
+Virtualization:                          VT-x
+Hypervisor vendor:                       Microsoft
+Virtualization type:                     full
+L1d cache:                               192 KiB (6 instances)
+L1i cache:                               192 KiB (6 instances)
+L2 cache:                                1.5 MiB (6 instances)
+L3 cache:                                12 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-11
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Mitigation; Aligned branch/return thunks
+Vulnerability Itlb multihit:             KVM: Mitigation: Split huge pages
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT Host state unknown
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Mitigation; Enhanced IBRS
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop
+Vulnerability Srbds:                     Unknown: Dependent on hypervisor status
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Not affected
+
+$ uptime
+ 04:33:24 up 39 min,  1 user,  load average: 0.32, 0.50, 0.41
+
+$ sha256sum gol/parallel_benchmark_test.go gol/distributor.go gol/gol.go images/128x128.pgm images/512x512.pgm
+533effacb27bcecb469e51abf608429a2c27949ab6659dfbcdd70f18e2fd8e5e  gol/parallel_benchmark_test.go
+b35095d6b6a9b602c2ea8249e23068c386d3abffbfe9ded8c8e32c58181552da  gol/distributor.go
+d466b104ace9e18a066c482d81032820ccb01ef2fce1a4fb82279ff0dfedd21c  gol/gol.go
+87596898e4e2f9adc69192069cfafd58b4c7386381f4f366871cf978203b74ef  images/128x128.pgm
+507d6783f844ff0064986f47ae70ebf109a23a3e941f0a2979f0e35ef1527b0f  images/512x512.pgm
+
+Completed UTC: 2026-11-18T04:40:45.366175+00:00
