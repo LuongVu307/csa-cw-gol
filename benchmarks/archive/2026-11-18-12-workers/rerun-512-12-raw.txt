@@ -1,0 +1,21 @@
+goos: linux
+goarch: amd64
+pkg: uk.ac.bris.cs/gameoflife/gol
+cpu: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+BenchmarkParallel/size=512/strategy=heap/workers=12-12         	       4	 292287554 ns/op	40287732 B/op	  437609 allocs/op
+BenchmarkParallel/size=512/strategy=heap/workers=12-12         	       4	 304283430 ns/op	40287192 B/op	  437605 allocs/op
+BenchmarkParallel/size=512/strategy=heap/workers=12-12         	       4	 310425721 ns/op	40287056 B/op	  437603 allocs/op
+BenchmarkParallel/size=512/strategy=heap/workers=12-12         	       4	 300682123 ns/op	40287440 B/op	  437607 allocs/op
+BenchmarkParallel/size=512/strategy=heap/workers=12-12         	       4	 324621020 ns/op	40287384 B/op	  437606 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12       	       4	 301742286 ns/op	10384832 B/op	  382214 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12       	       4	 298582491 ns/op	10384752 B/op	  382213 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12       	       4	 296570400 ns/op	10384888 B/op	  382213 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12       	       4	 294959826 ns/op	10384896 B/op	  382213 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12       	       4	 303283434 ns/op	10384800 B/op	  382213 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12    	       4	 305501010 ns/op	27179584 B/op	  394779 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12    	       4	 296989340 ns/op	27179608 B/op	  394780 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12    	       4	 299594983 ns/op	27180104 B/op	  394785 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12    	       4	 297903064 ns/op	27180736 B/op	  394792 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12    	       4	 300338179 ns/op	27180008 B/op	  394784 allocs/op
+PASS
+ok  	uk.ac.bris.cs/gameoflife/gol	36.149s

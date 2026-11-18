@@ -63,3 +63,8 @@ your-time\.txt
 
 # Compiled report; do not ignore PDF figures used by the source
 # /report.pdf
+
+# Python analyzer cache; retain benchmark raw data, summaries and PDF/PNG figures
+__pycache__/
+*.pyc
+*.pyo

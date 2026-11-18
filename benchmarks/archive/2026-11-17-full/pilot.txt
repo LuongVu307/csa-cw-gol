@@ -1,0 +1,15 @@
+goos: linux
+goarch: amd64
+pkg: uk.ac.bris.cs/gameoflife/gol
+cpu: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+BenchmarkParallel/size=512/strategy=heap/workers=1-12         	       1	 845807630 ns/op	40087272 B/op	  432032 allocs/op
+BenchmarkParallel/size=512/strategy=heap/workers=4-12         	       1	 378212080 ns/op	40014808 B/op	  433585 allocs/op
+BenchmarkParallel/size=512/strategy=heap/workers=12-12        	       1	 310394224 ns/op	40438184 B/op	  437920 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=1-12       	       1	1192759087 ns/op	10047344 B/op	  380715 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=4-12       	       1	 355857351 ns/op	10730704 B/op	  381417 allocs/op
+BenchmarkParallel/size=512/strategy=double/workers=12-12      	       1	 295307169 ns/op	10421488 B/op	  382295 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=1-12    	       1	1148197039 ns/op	34651648 B/op	  381804 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=4-12    	       1	 375047221 ns/op	28877184 B/op	  386364 allocs/op
+BenchmarkParallel/size=512/strategy=mapreduce/workers=12-12   	       1	 318412701 ns/op	27204896 B/op	  394939 allocs/op
+PASS
+ok  	uk.ac.bris.cs/gameoflife/gol	5.235s

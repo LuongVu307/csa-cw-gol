@@ -1,0 +1,28 @@
+\documentclass[tikz,border=4pt]{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{groupplots}
+\begin{document}
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=20mm},
+width=8cm,height=6cm,xlabel={Worker goroutines},
+ylabel={Allocations per simulation (thousands)},
+xtick={1,2,4,8,12,16},xmin=0.5,xmax=16.5,ymin=0,grid=major,
+legend style={font=\small,at={(0.5,-0.28)},anchor=north}]
+\nextgroupplot[title={128 x 128, 100 turns}]
+\addplot+[color=blue,mark=*,thick] coordinates {(1,34.960000) (2,35.459000) (4,36.460000) (8,38.559000) (12,40.559000) (16,42.559000)};
+\addlegendentry{Heap allocation}
+\addplot+[color=red,mark=square*,thick] coordinates {(1,21.689000) (2,22.189000) (4,22.389000) (8,22.789000) (12,23.189000) (16,23.589000)};
+\addlegendentry{Double buffer}
+\addplot+[color=teal,mark=triangle*,thick] coordinates {(1,21.641000) (2,22.687000) (4,23.130000) (8,24.034000) (12,24.931000) (16,25.815000)};
+\addlegendentry{Map-reduce}
+\nextgroupplot[title={512 x 512, 100 turns}]
+\addplot+[color=blue,mark=*,thick] coordinates {(1,431.999000) (2,432.501000) (4,433.502000) (8,435.602000) (12,437.601000) (16,439.606000)};
+\addlegendentry{Heap allocation}
+\addplot+[color=red,mark=square*,thick] coordinates {(1,380.713000) (2,381.213000) (4,381.413000) (8,381.813000) (12,382.214000) (16,382.615000)};
+\addlegendentry{Double buffer}
+\addplot+[color=teal,mark=triangle*,thick] coordinates {(1,381.806000) (2,383.924000) (4,386.326000) (8,390.641000) (12,394.785000) (16,398.789000)};
+\addlegendentry{Map-reduce}
+\end{groupplot}
+\end{tikzpicture}
+\end{document}

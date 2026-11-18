@@ -1,0 +1,28 @@
+\documentclass[tikz,border=4pt]{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{groupplots}
+\begin{document}
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1,horizontal sep=20mm},
+width=8cm,height=6cm,xlabel={Worker goroutines},
+ylabel={Speedup (from one-worker baseline)},
+xtick={1,2,4,8,12,16},xmin=0.5,xmax=16.5,ymin=0,grid=major,
+legend style={font=\small,at={(0.5,-0.28)},anchor=north}]
+\nextgroupplot[title={128 x 128, 100 turns}]
+\addplot+[color=blue,mark=*,thick] coordinates {(1,1.000000) (2,1.418374) (4,1.703160) (8,1.804850) (12,1.825453) (16,1.775654)};
+\addlegendentry{Heap allocation}
+\addplot+[color=red,mark=square*,thick] coordinates {(1,1.000000) (2,2.112819) (4,2.465512) (8,2.654260) (12,2.709919) (16,2.699207)};
+\addlegendentry{Double buffer}
+\addplot+[color=teal,mark=triangle*,thick] coordinates {(1,1.000000) (2,2.128077) (4,2.414991) (8,2.520514) (12,2.557599) (16,2.513945)};
+\addlegendentry{Map-reduce}
+\nextgroupplot[title={512 x 512, 100 turns}]
+\addplot+[color=blue,mark=*,thick] coordinates {(1,1.000000) (2,1.563658) (4,2.142551) (8,2.424623) (12,2.555605) (16,2.609271)};
+\addlegendentry{Heap allocation}
+\addplot+[color=red,mark=square*,thick] coordinates {(1,1.000000) (2,2.387092) (4,3.231494) (8,3.505172) (12,3.844965) (16,3.687012)};
+\addlegendentry{Double buffer}
+\addplot+[color=teal,mark=triangle*,thick] coordinates {(1,1.000000) (2,2.225068) (4,2.943458) (8,3.266710) (12,3.291242) (16,3.373046)};
+\addlegendentry{Map-reduce}
+\end{groupplot}
+\end{tikzpicture}
+\end{document}
