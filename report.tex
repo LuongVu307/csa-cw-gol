@@ -394,13 +394,125 @@ needed to explain the observed costs more precisely.
 
 \subsection{Functionality and System Design}
 
+Our distributed implementation separates the local controller, broker and
+worker services. The controller reads the input image, writes PGM output,
+handles keyboard input and passes events to SDL. The broker owns the current
+board and coordinates its evolution. Workers calculate changes for assigned
+strips and return their results to the broker. Communication uses Go's
+\texttt{net/rpc} over TCP. The controller obtains the broker address from
+\texttt{brokerURL.txt}; the broker reads worker addresses from
+\texttt{workerURLs.txt}.
+
+The broker keeps control and board ownership in one place so workers can
+focus on cell calculation. For multiple workers, each turn is divided into
+horizontal strips with neighbouring halo rows. Workers return coordinates
+of cells that need to change, rather than replacement boards. The broker
+collects all results before applying the flips, so every worker calculates
+from the same generation. This extends the local map-reduce design across
+processes, although transmitting coordinates can be expensive when many
+cells change.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=12mm and 24mm,
+  box/.style={draw,rounded corners,align=center,font=\small,
+              minimum width=35mm,minimum height=12mm},
+  flow/.style={-{Latex},thick}]
+\node[box] (client) {Local controller\\PGM, keys and SDL};
+\node[box,right=of client] (broker) {Broker\\board and turn coordination};
+\node[box,right=of broker] (workers) {Worker services\\strip calculations};
+\draw[flow] (client.north east) to[bend left=20]
+ node[above,font=\scriptsize]{initial board / commands} (broker.north west);
+\draw[flow] (broker.south west) to[bend left=20]
+ node[below,font=\scriptsize]{turn changes / snapshots} (client.south east);
+\draw[flow] (broker.north east) to[bend left=20]
+ node[above,font=\scriptsize]{strips with halo rows} (workers.north west);
+\draw[flow] (workers.south west) to[bend left=20]
+ node[below,font=\scriptsize]{changed coordinates} (broker.south east);
+\end{tikzpicture}
+\captionsetup{font=small}
+\caption{Distributed roles and network messages. Worker calculations run
+concurrently; the broker combines their results before advancing the board.}
+\label{fig:distributed-flow}
+\end{figure}
+
+The local two-worker setup passed \texttt{TestGol}, \texttt{TestPgm},
+\texttt{TestKeyboard} and \texttt{TestAlive} in manual verification.
+\texttt{TestGol} compares final boards with supplied fixtures for three
+image sizes and 0, 1 and 100 turns. A separate manual check confirmed that
+\texttt{k} saved output and stopped the client, broker and workers.
+These results establish behaviour in the tested local setup; they do not
+establish correctness under network failures or performance on AWS.
+
 \subsection{Communication and Control}
+
+\paragraph{Starting and calculating turns.}
+The controller starts a run by sending the parameters and initial board
+through the \texttt{ProcessStart} RPC. The broker connects to the configured worker
+addresses and reuses those connections during the simulation. At each turn,
+it sends each worker its strip, two halo rows and a starting-row offset.
+The halo rows supply neighbours across strip boundaries, including vertical
+wrap-around; the offset converts local coordinates to global board positions.
+Workers return lists of changed cells. They do not exchange messages directly
+with one another or retain their own evolving board between requests.
+Consequently, the broker sends strip pixels again each turn.
+
+The configured address count determines the number of strips; the
+controller's requested \texttt{Threads} value does not select the number of
+remote workers. There is also a special case: with one address, the shared
+map-reduce helper calculates the board locally in the broker. A connected
+worker is therefore not necessarily doing calculation. This case must be
+changed before using one remote worker as a distributed benchmark baseline.
+
+\paragraph{Displaying progress and returning output.}
+The controller repeatedly calls \texttt{Broker.ProcessNextTurn} to receive
+ordered batches of changed coordinates, producing \texttt{CellsFlipped}
+and \texttt{TurnComplete} events for SDL. Initial live cells are sent before
+the first \texttt{Executing} state. The broker copies each turn's coordinate
+list because its reducer reuses its buffer. A bounded channel limits queued
+batches, but also means a slow controller can hold up the simulation.
+Normal completion returns the final board and completed-turn count for
+local PGM output. Every two seconds the controller also requests an alive-cell
+count; this uses a copy of a board protected against concurrent updates.
+
+\paragraph{Keyboard controls.}
+Save (\texttt{s}), pause/resume (\texttt{p}) and quit (\texttt{q}) use separate
+RPC methods. Save returns a board copy and its turn number for local output.
+The engine handles these controls between turns, so snapshots describe
+complete generations and commands cannot interrupt an ongoing calculation.
+Quit returns a snapshot while leaving the servers available for another run.
+Kill (\texttt{k}) first stops the simulation and returns its snapshot; the
+controller waits for image output to finish before requesting worker and
+broker shutdown. This ordering lets the controller save the board before
+the services exit.
+
+\subsection{Extensions}
+
+\subsubsection{Halo Exchange and Further Improvements}
+
+\textit{To be completed: describe the extension implemented, how it differs
+from the broker sending strips with halo rows each turn, and the evidence
+used to evaluate it.}
+
+% Contributor notes: replace the placeholder above with the final description.
+% Explain ownership of each board partition, which halo rows are exchanged,
+% which components communicate, and when exchange happens relative to updates.
+% Describe wrap-around boundaries and how workers stay on the same generation.
+% If workers retain their partitions, distinguish this from the current
+% implementation, where the broker resends strips and workers return flips.
+% Add a diagram if useful, correctness checks and any measured performance.
+% Include other implemented improvements here; do not claim planned work is done.
 
 \section{Distributed Evaluation}
 
 \subsection{Methodology and Scaling}
 
+% Add the distributed benchmark setup, results and scaling analysis here.
+
 \subsection{Failure Behaviour and Limitations}
+
+% Add verified failure behaviour and limitations here.
 
 \section{Overall Findings}
 
