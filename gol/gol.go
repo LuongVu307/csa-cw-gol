@@ -30,7 +30,7 @@ func distributeWithHeapAllocation(p Params, c distributorChannels, keyPresses <-
 				if (*world)[y][x] != world2[y][x] {
 					c.events <- CellFlipped{
 						CompletedTurns: completedTurns + 1,
-						Cell: util.Cell{X: x, Y: y},
+						Cell:           util.Cell{X: x, Y: y},
 					}
 				}
 			}
@@ -60,7 +60,7 @@ func distributeWithDoubleBuffer(p Params, c distributorChannels, keyPresses <-ch
 				if (*world)[y][x] != world2[y][x] {
 					c.events <- CellFlipped{
 						CompletedTurns: completedTurns + 1,
-						Cell: util.Cell{X: x, Y: y},
+						Cell:           util.Cell{X: x, Y: y},
 					}
 				}
 			}
@@ -92,7 +92,7 @@ func distributeWithMapReduce(p Params, c distributorChannels, keyPresses <-chan 
 		for _, cell := range cellsFlippedBuffer[:size] {
 			c.events <- CellFlipped{
 				CompletedTurns: completedTurns + 1,
-				Cell: cell,
+				Cell:           cell,
 			}
 		}
 
@@ -127,6 +127,29 @@ type PauseUnpauseResult struct {
 type CellCountResult struct {
 	Turn  int
 	Count int
+}
+
+
+func getBrokerUrl() string {
+	bytes, err := os.ReadFile("brokerURL.txt")
+	if err != nil {
+		panic("brokerURL.txt not found")
+	}
+	// theres some newline character in the filename, this just removes it
+	return strings.ReplaceAll(strings.ReplaceAll(string(bytes), "\r\n", ""), "\n", "")
+}
+
+func connectToBroker() *rpc.Client {
+	url := getBrokerUrl()
+	fmt.Println("Connecting to server at (", url, ")")
+	client, err := rpc.Dial("tcp", url)
+	fmt.Println("Attempted connection")
+	if err != nil {
+		panic("Failed to connect to broker")
+	} else {
+		fmt.Println("Connection successful")
+	}
+	return client
 }
 
 // TurnResult matches the broker's ordered stream of reducer results.
@@ -225,6 +248,108 @@ func distributeWithBrokerClient(p Params, c distributorChannels, keyPresses <-ch
 			}
 		}
 	}
+}
+
+type BrokerArgsCpp struct {
+	P     Params
+	World []uint8
+}
+
+type CompleteResultCpp struct {
+	Turn int
+	Res  []uint8
+}
+type SaveResultCpp struct {
+	Turn int
+	Res  []uint8
+}
+type QuitResultCpp struct {
+}
+type PauseUnpauseResultCpp struct {
+	Turns   int
+	IsPause bool
+}
+type CellCountResultCpp struct {
+	Turn  int
+	Count int
+}
+
+func distributeWithCppBroker(p Params, c distributorChannels, keyPresses <-chan rune) {
+	client := connectToBroker()
+
+	world := make([]uint8, p.ImageWidth*p.ImageHeight)
+	populateWorld1D(world, p.ImageWidth, p.ImageHeight, c)
+
+	doneSig := make(chan bool, 1)
+	ticker := time.NewTicker(2 * time.Second)
+
+	quitFg := false
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		contLoop := true
+		for contLoop {
+			select {
+			case <-ticker.C:
+				var res CellCountResultCpp
+				client.Call("CppBroker.ProcessCellCount", 0, &res)
+				c.events <- AliveCellsCount{
+					CompletedTurns: res.Turn,
+					CellsCount:     res.Count,
+				}
+			case key := <-keyPresses:
+				switch key {
+				case 's':
+					var res SaveResultCpp
+					client.Call("CppBroker.ProcessSave", 0, &res)
+					filename := distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn)
+
+					c.ioCommand <- ioOutput
+					c.ioFilename <- filename
+					outputWorker1D(p, c, res.Res)
+
+					c.ioCommand <- ioCheckIdle
+					<-c.ioIdle
+
+					c.events <- ImageOutputComplete{res.Turn, filename}
+
+				case 'q':
+					var res QuitResultCpp
+					client.Call("CppBroker.ProcessQuit", 0, &res)
+					quitFg = true
+				case 'p':
+					var res PauseUnpauseResultCpp
+					client.Call("CppBroker.ProcessPauseUnpause", 0, &res)
+					if res.IsPause {
+						c.events <- StateChange{res.Turns, Paused}
+					} else {
+						c.events <- StateChange{res.Turns, Executing}
+					}
+				}
+
+			case <-doneSig:
+				contLoop = false
+			}
+		}
+	})
+
+	c.events <- StateChange{0, Executing}
+	args := BrokerArgsCpp{P: p, World: world}
+	var res CompleteResultCpp
+	e := client.Call("CppBroker.ProcessConnection", args, &res)
+	if e != nil {
+		fmt.Println("Error: ", e)
+		panic("Exiting")
+	}
+	doneSig <- true
+
+	wg.Wait()
+	if quitFg {
+		distributorExitFn1D(p, c, res.Res, res.Turn, distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, res.Turn))
+	} else {
+		distributorExitFn1D(p, c, res.Res, res.Turn, distributorDefaultExitFilenameFn(p))
+	}
+	close(c.events)
 }
 
 func Run(p Params, events chan<- Event, keyPresses <-chan rune) {

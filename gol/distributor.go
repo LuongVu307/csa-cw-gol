@@ -198,6 +198,15 @@ func calculateAliveCells(p Params, world [][]uint8) []util.Cell {
 	}
 	return alive
 }
+func calculateAliveCells1D(p Params, world []uint8) []util.Cell {
+	alive := []util.Cell{}
+	for i := 0; i < p.ImageHeight*p.ImageWidth; i++ {
+		if world[i] == 255 {
+			alive = append(alive, util.Cell{X: i % p.ImageWidth, Y: i / p.ImageWidth})
+		}
+	}
+	return alive
+}
 func calculateAliveCellsCount(p Params, world [][]uint8) int {
 	alive := 0
 	for h := 0; h < p.ImageHeight; h++ {
@@ -205,6 +214,15 @@ func calculateAliveCellsCount(p Params, world [][]uint8) int {
 			if world[h][w] == 255 {
 				alive++
 			}
+		}
+	}
+	return alive
+}
+func calculateAliveCellsCount1D(p Params, world []uint8) int {
+	alive := 0
+	for i := 0; i < p.ImageHeight*p.ImageWidth; i++ {
+		if world[i] == 255 {
+			alive++
 		}
 	}
 	return alive
@@ -343,7 +361,7 @@ func startWorkersMapReduce(p Params, world [][]uint8,
 	// width := p.ImageWidth
 
 	channelBufferSize := 10
-	
+
 	if threads == 1 {
 		// calculateNextStateMapReduce(p, world)
 
@@ -351,7 +369,7 @@ func startWorkersMapReduce(p Params, world [][]uint8,
 		for i := 0; i < len(cs); i++ {
 			cell := cs[i]
 			sizedAppend(cellsFlipped, sizeP, cell)
-			world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]			
+			world[cell.Y][cell.X] = 255 - world[cell.Y][cell.X]
 		}
 	} else {
 
@@ -455,6 +473,11 @@ func outputWorker(p Params, c distributorChannels, world [][]uint8) {
 		}
 	}
 }
+func outputWorker1D(p Params, c distributorChannels, world []uint8) {
+	for i := 0; i < p.ImageWidth*p.ImageHeight; i++ {
+		c.ioOutput <- world[i]
+	}
+}
 
 func make2DSlice(x int, y int) [][]uint8 {
 	res := make([][]uint8, y)
@@ -469,6 +492,11 @@ func populateWorld(world [][]uint8, x int, y int, c distributorChannels) {
 		for j := 0; j < x; j++ {
 			world[i][j] = <-c.ioInput
 		}
+	}
+}
+func populateWorld1D(world []uint8, x int, y int, c distributorChannels) {
+	for i := 0; i < x*y; i++ {
+		world[i] = <-c.ioInput
 	}
 }
 
@@ -496,6 +524,22 @@ func distributorFinalOutputFn(p Params, c distributorChannels, world [][]uint8, 
 
 	c.events <- ImageOutputComplete{turnsDone, filename}
 }
+func distributorExitFn1D(p Params, c distributorChannels, world []uint8, turnsDone int, filename string) {
+	c.events <- FinalTurnComplete{turnsDone, calculateAliveCells1D(p, world)}
+	c.ioCommand <- ioOutput
+	c.ioFilename <- filename
+	// no point in using "go" keyword, the current goroutine will anyways block until IO is done
+	outputWorker1D(p, c, world)
+
+	// Make sure that the Io has finished any output before exiting.
+	c.ioCommand <- ioCheckIdle
+	<-c.ioIdle
+
+	c.events <- ImageOutputComplete{turnsDone, filename}
+
+	c.events <- StateChange{turnsDone, Quitting}
+
+}
 
 func distributorDefaultExitFilenameFn(p Params) string {
 	return distributorQuitFilenameFn(p.ImageWidth, p.ImageHeight, p.Turns)
@@ -513,7 +557,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune, comple
 			if world[y][x] == 255 {
 				c.events <- CellFlipped{
 					CompletedTurns: 0,
-					Cell: util.Cell{X: x, Y: y},
+					Cell:           util.Cell{X: x, Y: y},
 				}
 			}
 		}
