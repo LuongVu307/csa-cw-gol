@@ -384,6 +384,7 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioFilenameChan <- fileName
 
 	// TODO uncomment the preferred function below (and comment out the rest)
+	//
 	// distributeWithHeapAllocation(p, distributorChannels, keyPresses)
 	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)

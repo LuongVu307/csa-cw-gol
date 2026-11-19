@@ -489,11 +489,42 @@ the services exit.
 
 \subsection{Extensions}
 
-\subsubsection{Halo Exchange and Further Improvements}
+\paragraph{Halo Exchange and Broker-Worker Synchronisation Methods}
+In the standard approach (explained previously), there is an
+expensive synchronisation operation required between the broker and the workers,
+in which the broker has to collect all of the results from the workers, put them together,
+and then send out the resulting slices, all to be repeated for every single turn.
 
-\textit{To be completed: describe the extension implemented, how it differs
-from the broker sending strips with halo rows each turn, and the evidence
-used to evaluate it.}
+The halo exchange technique helps to reduce dependencies between the broker and the workers by
+allowing the workers to directly communicate with one another without the broker needing
+to collect all the workers' results. Then, once the workers have completed the required iterations,
+they can return the final result to the broker, which can then return the result to the
+local controller.
+
+However, certain complications can occur when managing (\texttt{quit}),
+(\texttt{save}), (\texttt{pause/unpause}) and (\texttt{cell count}) events.
+This is because there are limited guarantees on the arrival order and arrival time of
+these events to the different workers. For example, say we have 2 workers, (\texttt{W_1})
+and (\texttt{W_2}). Say that the broker recieves a (\texttt{save}) event, and then forwards
+this to (\texttt{W_1}) and (\texttt{W_2}). It is completely possible for the (\texttt{save})
+event to arrive to (\texttt{W_1}) on, say turn (\texttt{42}), but to arrive to (\texttt{W_2})
+on turn (\texttt{43}), or event (\texttt{44}), and so on. This can be due to varying network
+latencies between (\texttt{W_1}) and the broker, and (\texttt{W_2}) and the broker.
+
+For simplicity, our solution uses a technique which involves sending multiple "synchronisation"
+messages, which can be used to implement a "global" total ordering (\texttt{R(s_1, E, s_2)}), such
+that (\texttt{s_1, s_2}) are tuples of synchronisation messages that have been both sent (to all workers) and had an "acknowledgment"
+message recieved (from all workers) completely before and after (\testtt{E}) respectively, and (\texttt{E})
+is a list of events to be processed by the workers. Using this ordering, we can use each synchronisation
+message like a barrier after a set number of turns, at which each worker can respond to the message, then
+process and respond to all events before being triggered by another synchronisation message to continue running
+the GOL simulation.
+
+Getting to some implementation details, sending synchronisation messages every turn (for example)
+can sacrifice a lot of turns per second,
+so it would be preferable to send synchronisation messages every couple of turns, with the target
+begin to maintain a particular number of sync messages per second. The exact number for this must be
+well chosen to find an appropriate balance between responsiveness to events and turns per second.
 
 % Contributor notes: replace the placeholder above with the final description.
 % Explain ownership of each board partition, which halo rows are exchanged,
