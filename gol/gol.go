@@ -387,5 +387,6 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	// distributeWithHeapAllocation(p, distributorChannels, keyPresses)
 	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)
-	distributeWithBroker(p, distributorChannels, keyPresses)
+	// distributeWithBroker(p, distributorChannels, keyPresses)
+	distributeWithCppBroker(p, distributorChannels, keyPresses)
 }
