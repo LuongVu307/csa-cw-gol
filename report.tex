@@ -539,14 +539,102 @@ well chosen to find an appropriate balance between responsiveness to events and 
 
 \subsection{Methodology and Scaling}
 
-With a 512x512 grid and testing with a 50ms simulated delay on localhost, the performance sat around roughly
-(\texttt{3300tps (turns per second)})
-for a single worker, but roughly (\texttt{10tps}) for 2-6 workers. Each worker used a single thread for processing data
-to reduce contention between logical processors. Looking into this, this is fairly reasonable, given that the delay
-for communicating during the halo exchange was (\texttt{50ms}), so an RPC call would take roughly (\texttt{100ms}), plus
-any extra operations performed during the call. Since there are (\texttt{10 * 100ms}) in a second, this is not actually
-such an incredibly horrible result, and would've been worse if we had to send an entire 512x512 grid across the simulated network.
+We measured the Go distributed implementation on 19 November 2026 using
+TCP connections between separate controller, broker and worker processes
+on one WSL2 host. The machine used an Intel i7-10750H with twelve logical
+CPUs and Go 1.25.0. Each process used \texttt{GOMAXPROCS=1}; this allows
+separate workers to execute concurrently without giving each process
+multiple Go execution slots. These are localhost measurements, not AWS
+or multi-machine results.
 
-\section*{References}
+The standalone harness (\texttt{benchmarks/distributed}) restarted the same
+supplied $512\times512$ image for 100 turns, collecting three samples with
+two workers followed by three with four. Fresh server processes were started
+for each configuration, outside timing. Each sample established new controller
+and worker connections. The broker's address list determined the actual
+worker count; changing the controller's thread parameter alone would not.
+The one-worker case was excluded because it calculates locally in the broker.
+
+Timing included connection establishment, initial board transfer, worker
+connections, generation calculation and reduction, streamed turn replies and
+final-board transfer, including decoding and retaining change batches.
+Process startup, fixture reading, reference validation, SDL and PGM writing
+were excluded. All six samples returned the expected final board and exactly
+100 ordered turn batches; replaying their changes also matched the supplied
+100-turn fixture. These checks validate the measured paths, but do not replace
+the keyboard and SDL tests. The raw CSV files, source hashes and environment
+record are retained in
+\nolinkurl{benchmarks/distributed/runs/20261119-083227}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.64\linewidth]{benchmarks/distributed/runs/20261119-083227/summary/runtime.pdf}
+\captionsetup{font=small}
+\caption{Go distributed runtime for 100 turns on $512\times512$, using
+separate processes on one localhost machine. Points show three-sample
+medians; bars span sample minima and maxima, not confidence intervals.
+Every process used \texttt{GOMAXPROCS=1}.}
+\label{fig:distributed-runtime}
+\end{figure}
+
+\paragraph{Measured scaling.}
+Two workers took a median 486.70\,ms (range 446.42--555.59\,ms).
+Four workers took 311.67\,ms (293.19--406.27\,ms),
+a 36.0\% reduction (Figure~\ref{fig:distributed-runtime}). Relative speedup
+was $T(2)/T(4)=486.70/311.67\approx1.56\times$, compared with
+$2\times$ for ideal scaling when doubling workers. This is a two-worker
+baseline, not speedup relative to serial execution. Four workers were faster
+in these samples, but three repeats and two worker counts do not establish
+an optimal configuration or a general scaling curve.
+
+\paragraph{Expected scaling and communication costs.}
+For width $W$, height $H$ and $n$ workers, each worker calculates approximately
+$WH/n$ cells. Total worker requests carry $WH+2nW$ pixel bytes per generation
+before encoding: the board partitions plus two halo rows per worker.
+More workers reduce individual calculation but retain full-board transfer
+and increase halo traffic and request count. Changed coordinates return to
+the broker and are forwarded to the controller; their volume depends on
+pattern activity.
+
+The broker waits for the slowest worker, then performs central reduction
+and stream copying. A slow controller can also block the bounded turn stream.
+These costs are possible explanations for the observed sublinear improvement;
+no profiling was performed to isolate their contributions. Localhost processes
+share CPU and memory bandwidth. Fixed order, three repeats and uncontrolled
+host load limit generalisation; more configurations, repeated or randomised
+ordering and measurements on separate machines would be needed to establish
+multi-node scaling. Timing boundaries also differ from the local parallel
+benchmark, so subtracting those runtimes would not isolate network overhead.
+
+\subsection{Failure Behaviour and Limitations}
+
+The following assessment comes from code inspection, rather than injected
+network-failure experiments. Failure to connect to the broker or a configured
+worker causes a panic. More seriously, the worker calculation RPC discards
+its returned error: a failed request can contribute no flips while the broker
+continues with the other results, potentially producing an incorrect board.
+A missing result is therefore not reliably distinguished from a strip with
+no changes. There are no retries, worker replacement or application-level
+RPC deadlines; an unresponsive service can hold up a generation.
+
+The broker owns the only evolving board, so its failure loses the active
+simulation. Workers are stateless between requests and cannot recover it.
+If the controller disconnects, the broker's bounded stream can fill and
+block progress; there is no cancellation or session-recovery mechanism.
+Save and quit provide snapshots during normal operation, but do not provide
+automatic checkpoint recovery after failure. The local functional checks do
+not establish fault tolerance. Explicit error propagation, deadlines,
+controller-disconnection handling and recoverable checkpoints would be the
+next reliability improvements.
+
+\section{Overall Findings}
+
+The local measurements show useful parallel speedup and lower cumulative
+allocation with double buffering, without a stable runtime winner across
+runs. The distributed design extends map-reduce across RPC services, but
+central coordination and repeated board transfers remain scaling costs.
+The localhost distributed measurements improved by $1.56\times$ from two
+to four workers, but do not establish AWS scaling or fault tolerance.
+
 
 \end{document}

@@ -1,0 +1,61 @@
+go version go1.25.0 linux/amd64
+UTC: 2026-11-19T08:32:27Z
+localhost TCP; host=DESKTOP-CSNI6O3; GOMAXPROCS=1 per controller, broker and worker process
+Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39
+Logical CPUs: 12
+Sequential configurations: 2 then 4 workers; 3 samples each; 512x512; 100 turns.
+All processes share one machine. This is not AWS or multi-host scaling.
+model name	: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+
+Repository: /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol
+fe003e928785a74d1f4a10f108d66586517a5405
+ M gol/gol.go
+ M report.pdf
+ M report.tex
+?? benchmarks/distributed/
+54f6964de09c783533473bbf98084c75d67811c234c68e42ed915f49eae5bf9e  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/benchmarks/distributed/main.go
+5f2c695160099ab7d32d6a15504cf4365b4f2ac0055ddd853814a157f6744112  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/gol/broker_shutdown_test.go
+927e7b1b5e3a45f53348e37ecbff32ace1ac622bf91d687979de55254e757eb2  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/gol/distributor.go
+61ac500fd0b43fa18f65bdaaed21ba4eff8865c77a42af56c97b4ff76b3a8860  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/gol/event.go
+df670d8e2375516744b3cb0036524cd4ca569a6bd5c57ecfc3b2431fd2adad5e  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/gol/gol.go
+cea8e7a6919ac3c2e16ba68de23ac93a079ffb572a3152c22908f9ceced2358d  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/gol/io.go
+533effacb27bcecb469e51abf608429a2c27949ab6659dfbcdd70f18e2fd8e5e  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/gol/parallel_benchmark_test.go
+8ea19ec9a384db806e34888a102a9b2518f7f8a5c2ca152a23ce8ff9e97af5e7  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/main.go
+e4ac398c795d3f65d31900c49915c0993de91f66c631a0f3ab0a6f6cb8ba14e0  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/sdl/loop.go
+5e307172e2a5ecf74a6faab1b682e35469e85cacbec310c91e1f1e1cb642afe8  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/sdl/window.go
+705f02c6c32b144251c0097eff004cfff4e750ea4c171ac73d61e53ae09fba63  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/tests/alive_test.go
+343d8ba4a6a955a29a06f6e07fb21a935888f8ab96d7a1087582b2792254306a  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/tests/gol_test.go
+1cf7df519600add1c0d8187547a9376dd604df1223dd490b50907a9109d8d86c  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/tests/keyboard_test.go
+570aff001cb19c15d43283727377d229814ff3f14438537d62245aead7bbd924  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/tests/main_test.go
+3436d51ee99a0f653706f0eb9958896da057d8aff15ccc3f0bdc086043f163c5  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/tests/pgm_test.go
+7bdea8da5e4a42543dc1078f0276a40fa7822bd6518511858c109388218c9acb  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/tests/sdl_test.go
+8c2b2d06a8a06c6cc9c58201a5a02c994aa23e0fe9dc7bf69034d26c42d86803  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/tests/trace_test.go
+bdb8b084f0ebc84d4c687a3bf318ad9dedff266a46b887087f2c148012ac14fb  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/tests/util_test.go
+66e04fe0f623ba347276134f729330c7de2cbc9d05501f539a5dd5f486b798a4  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/util/avgturns.go
+814f6830763bfc5341793a282886d204ffed6866dbf19ef03876c10ac1576a34  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/util/cell.go
+f694650c032888551c415111830ec72d1b00d040dd5d2ddc659996bc8c479472  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/util/check.go
+724fe35483fe0698a744bf62e700feb8d3c54476437ac9047ad1c75b69fffd10  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/util/visualise.go
+
+Repository: /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server
+b3fc5eeefcb3882eee1228eed23e31be31676c2f
+5bc28b9a6d81175093fc0cded829a5a259e8789b3a25c51d494450f1ef864316  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server/gol/distributor.go
+61ac500fd0b43fa18f65bdaaed21ba4eff8865c77a42af56c97b4ff76b3a8860  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server/gol/event.go
+fb94a75fa684169ae79e913710cde399203b50054d0178207892597d40f1647b  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server/gol/gol.go
+b38888a2c4291955fbda6846b49f16e6d6cdfcccecf19d71ab8e86c00ed6ec64  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server/main.go
+66e04fe0f623ba347276134f729330c7de2cbc9d05501f539a5dd5f486b798a4  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server/util/avgturns.go
+814f6830763bfc5341793a282886d204ffed6866dbf19ef03876c10ac1576a34  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server/util/cell.go
+f694650c032888551c415111830ec72d1b00d040dd5d2ddc659996bc8c479472  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server/util/check.go
+724fe35483fe0698a744bf62e700feb8d3c54476437ac9047ad1c75b69fffd10  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol-distributor-server/util/visualise.go
+
+Repository: /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server
+697b3d7f5f6935a413c4b0a33aa7d35414cbf80f
+919225e112b67e38368554cacbd04a29e6a1d42011a266213812d749bb7cb65a  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server/gol/distributor.go
+61ac500fd0b43fa18f65bdaaed21ba4eff8865c77a42af56c97b4ff76b3a8860  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server/gol/event.go
+b021ec48cf99433b5946b03d846cf6a5d31521c4ed9f904c9cedd7b1f2fb8964  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server/gol/gol.go
+414b59dd17ea7050c480975537259c37a6b646bcc626d2e0f5e7509a16ccb2c4  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server/main.go
+66e04fe0f623ba347276134f729330c7de2cbc9d05501f539a5dd5f486b798a4  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server/util/avgturns.go
+814f6830763bfc5341793a282886d204ffed6866dbf19ef03876c10ac1576a34  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server/util/cell.go
+f694650c032888551c415111830ec72d1b00d040dd5d2ddc659996bc8c479472  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server/util/check.go
+724fe35483fe0698a744bf62e700feb8d3c54476437ac9047ad1c75b69fffd10  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-gol-cw-worker-server/util/visualise.go
+507d6783f844ff0064986f47ae70ebf109a23a3e941f0a2979f0e35ef1527b0f  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/images/512x512.pgm
+2823119001ed0959e5294b2f123deb8af6f38058f6156721b6a2a625edeca690  /home/vglg3/Editor/Uob-CompSys-Lab/CW1/csa-cw-gol/check/images/512x512x100.pgm
