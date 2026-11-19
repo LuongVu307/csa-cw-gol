@@ -1,0 +1,8 @@
+512
+6: 10tps
+5: 10tps
+4: 10tps
+2: 10tps
+1: 1000tps
+
+workers tps 128

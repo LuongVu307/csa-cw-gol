@@ -1,10 +1,12 @@
 package gol
 
 import (
+	"fmt"
 	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
 )
@@ -128,7 +130,6 @@ type CellCountResult struct {
 	Turn  int
 	Count int
 }
-
 
 func getBrokerUrl() string {
 	bytes, err := os.ReadFile("brokerURL.txt")
@@ -383,8 +384,10 @@ func Run(p Params, events chan<- Event, keyPresses <-chan rune) {
 	ioFilenameChan <- fileName
 
 	// TODO uncomment the preferred function below (and comment out the rest)
+	//
 	// distributeWithHeapAllocation(p, distributorChannels, keyPresses)
 	// distributeWithDoubleBuffer(p, distributorChannels, keyPresses)
 	// distributeWithMapReduce(p, distributorChannels, keyPresses)
-	distributeWithBroker(p, distributorChannels, keyPresses)
+	// distributeWithBroker(p, distributorChannels, keyPresses)
+	distributeWithCppBroker(p, distributorChannels, keyPresses)
 }
