@@ -1,0 +1,14 @@
+\documentclass[tikz,border=4pt]{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[width=10cm,height=6cm,xlabel={Remote worker processes},
+ylabel={Runtime (ms)},xtick=data,ymin=0,grid=major]
+\addplot+[mark=*,error bars/.cd,y dir=both,y explicit] coordinates {
+(2,486.700) += (0,68.892) -= (0,40.280)
+(4,311.671) += (0,94.597) -= (0,18.478)
+};
+\end{axis}
+\end{tikzpicture}
+\end{document}

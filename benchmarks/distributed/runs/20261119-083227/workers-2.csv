@@ -1,0 +1,4 @@
+utc,setup,broker,workers,width,height,turns,sample,milliseconds,go_version,gomaxprocs,validation
+2026-11-19T08:32:33Z,"localhost TCP; host=DESKTOP-CSNI6O3; GOMAXPROCS=1 per controller, broker and worker process",127.0.0.1:47721,2,512,512,100,1,446.419945,go1.25.0,1,PASS
+2026-11-19T08:32:34Z,"localhost TCP; host=DESKTOP-CSNI6O3; GOMAXPROCS=1 per controller, broker and worker process",127.0.0.1:47721,2,512,512,100,2,555.591570,go1.25.0,1,PASS
+2026-11-19T08:32:34Z,"localhost TCP; host=DESKTOP-CSNI6O3; GOMAXPROCS=1 per controller, broker and worker process",127.0.0.1:47721,2,512,512,100,3,486.699659,go1.25.0,1,PASS
