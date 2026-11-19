@@ -1,10 +1,12 @@
 package gol
 
 import (
+	"fmt"
 	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
 )
@@ -128,7 +130,6 @@ type CellCountResult struct {
 	Turn  int
 	Count int
 }
-
 
 func getBrokerUrl() string {
 	bytes, err := os.ReadFile("brokerURL.txt")
