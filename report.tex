@@ -1,9 +1,11 @@
 % Compile with: latexmk -pdf report.tex
 % Submit report.pdf; maximum six pages total, with no cover page.
-\documentclass[10pt,a4paper]{article}
+\documentclass[10pt,a4paper,twocolumn]{article}
 \usepackage[margin=20mm]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{ragged2e}
 \usepackage{graphicx}
 \usepackage{caption}
 \usepackage{tikz}
@@ -15,14 +17,31 @@
 \usepackage{enumitem}
 \setlist{nosep,leftmargin=*}
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{4pt}
+\setlength{\parskip}{2pt}
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{10pt plus 2pt minus 2pt}{5pt plus 1pt}
+\titlespacing*{\subsection}{0pt}{8pt plus 2pt minus 2pt}{4pt plus 1pt}
+\titlespacing*{\paragraph}{0pt}{5pt plus 1pt minus 1pt}{0.7em}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\dbltextfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\dblfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\captionsetup{skip=4pt}
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd{\@maketitle}{\vskip 2em}{\vskip 0pt}{}{}
+\patchcmd{\@maketitle}{\vskip 1.5em}{\vskip 0.7em}{}{}
+\patchcmd{\@maketitle}{\vskip 1em}{\vskip 0pt}{}{}
+\makeatother
 
 \title{Game of Life: Parallel and Distributed Implementations}
-\author{Gia Luong Vu --- hw25288 \and [Name 2] --- [Username 2] \and [Name 3] --- [Username 3]}
+\author{Gia Luong Vu --- hw25288 \and Matthew Lopez Gati --- wb25079 \and  Leo Macleod --- jj25708}
 \date{}
 
 \begin{document}
 \maketitle
+\RaggedRight
 
 \section{Parallel Implementation}
 
@@ -44,31 +63,17 @@ the final board and waits for I/O completion before emitting
 \texttt{ImageOutputComplete} and the \texttt{Quitting} state. The final
 simulation-result event itself is emitted before image writing.
 
-% Add actual correctness evidence here: supplied tests, worker/board
-% configurations, race-detector command and results, and known limitations.
-% The functionality above describes code paths; it is not a claim that all
-% tests pass. Keep this distinction until verification is complete.
-
 \subsection{Concurrency and Synchronisation}
 
 \paragraph{Distributor architecture.}
-The distributor connects the PGM I/O and SDL components to the simulation logic. 
-It allocates the board, receives image pixels through the
-I/O input channel, and emits initial live-cell events to populate the display.
-The map-reduce entry point supplies a \texttt{completeTurn} callback, separating
-turn calculation from the distributor's common control and output workflow.
+The distributor loads the board through PGM I/O and emits initial live-cell
+events for SDL. A \texttt{completeTurn} callback separates calculation from
+common controls and output. The outer loop forwards keyboard commands through
+unbuffered channels; a simulation goroutine started with \texttt{wg.Go(loopFn)}
+owns board updates and handles commands between generations
+(Figure~\ref{fig:parallel-flow}). The outer loop never modifies the board.
 
-The distributor then runs two concurrent loops. One call 
-\texttt{wg.Go(loopFn)} to start a simulation goroutine, while the original
-execution continues running in an outer loop to receive keyboard input and completion
-notifications. The outer loop forwards save, pause, and quit commands through
-unbuffered internal channels and  doesn't modify the board. The simulation
-loop processes board updates and accepts commands between generations. This
-prevents control handlers from independently accessing a board
-while workers are calculating its next state. Figure~\ref{fig:parallel-flow}
-shows the main communication paths.
-
-\begin{figure}[htbp]
+\begin{figure*}[t]
 \centering
 \begin{tikzpicture}[
   node distance=10mm and 24mm,
@@ -96,69 +101,53 @@ shows the main communication paths.
 \captionsetup{font=small}
 \caption{Parallel execution roles. }
 \label{fig:parallel-flow}
-\end{figure}
+\end{figure*}
 
-Worker results and control signals use channels; workers share references to board rows. 
-The I/O link summarises separate command, data, and acknowledgement channels. A helper goroutine
-(not shown) waits for worker completion.
+Worker results and controls use channels, while workers share board-row
+references. The I/O link represents command, data and acknowledgement channels;
+a helper goroutine (not shown) waits for worker completion.
 
-\paragraph{Map-reduce architecture.}
-For multiple workers, the \texttt{startWorkersMapReduce} divides the
-board into horizontal strips, distributing remainder rows when the height
-is not divisible by the worker count. Each strip also includes read-only halo
-rows above and below; this with the wrap-around indices make sure all neighbours 
-are covered within a cell. A starting-row offset maps local results to global
-coordinates. Repeated \texttt{wg.Go(...)} calls launch calculation goroutines,
-which Go may execute in parallel according to available CPU resources and
-\texttt{GOMAXPROCS}. Each worker reads the current generation, builds a local
-change list, and sends its coordinates through a shared buffered channel \texttt{cellFlippedChan}.
-For one worker, the change list is calculated directly by the
-simulation goroutine.
+\paragraph{Map-reduce~architecture.}
+\texttt{startWorkersMapReduce} partitions the board into horizontal strips,
+distributing remainder rows and including read-only halo rows with toroidal
+wrap-around. Starting-row offsets map results to global coordinates. Each
+turn launches workers with \texttt{wg.Go(...)}; execution depends on available
+CPUs and \texttt{GOMAXPROCS}. Workers build local change lists and send
+coordinates through the shared buffered \texttt{cellFlippedChan}. The
+one-worker path calculates directly in the simulation goroutine.
 
-The simulation goroutine collects coordinates while workers run, allowing
-workers to continue sending when the channel would otherwise fill. A separate
-wait group tracks these workers. A helper goroutine waits for their return,
-signals completion, and closes the result channel; the collector drains any
-remaining results before modifying the board. Worker completion indicates
-that shared reading have finished, while draining indicates that all results
-have been received. The reduce phase then applies the flips in place. This
-ordering preserves a single input generation without per-cell locks.
-
-The collected-coordinate buffer is reused between turns. Its entries also
-produce \texttt{CellFlipped} events, avoiding a separate full-board comparison.
-After the callback returns, the distributor increments the completed-turn
-counter and emits \texttt{TurnComplete}. Collection, applying flips, and event
-delivery remain in serial; worker goroutines and local change lists are
-still created each turn.
+The simulation goroutine collects coordinates while workers run, preventing
+a full channel from blocking worker completion. A helper waits for all workers,
+signals completion and closes the channel; the collector then drains it.
+Receiving coordinates may overlap with worker reads; applying flips
+must wait until every worker has finished and every result has been collected.
+Earlier updates could mix generations during neighbour counting and produce
+scheduling-dependent results. The simulation goroutine applies the flips and
+reuses the coordinate buffer for \texttt{CellFlipped} events, avoiding a full-board
+comparison. It then advances the turn count and emits \texttt{TurnComplete}.
+Collection, updates and event delivery remain serial; worker goroutines and
+local change lists are created each turn.
 
 \paragraph{Controls and periodic reporting.}
-The simulation loop selects a ready command or ticker event; when none is
-ready, its \texttt{default} branch calculates another turn unless paused.
-The branches execute sequentially and have no fixed priority. Pause suppresses
-new turns while save, quit, and reporting remain available. Because commands
-cannot interrupt \texttt{completeTurn}, snapshots and counts refer to complete
-generations, but command response time depends on turn duration. The ticker
-requests alive-cell reporting every two seconds rather than pacing the
-simulation. Long turns or blocked event delivery can delay these reports.
-The current paused loop continues polling through \texttt{default}, so it
-can consume CPU while no generation is being calculated.
+A \texttt{select} handles ready commands and ticker events; otherwise its
+\texttt{default} branch calculates a turn unless paused. Commands run between
+turns, so snapshots and counts describe complete generations. Pause leaves
+save, quit and reporting available, but the default branch keeps polling and
+can consume CPU. The two-second ticker requests alive counts rather than
+pacing calculation; long turns or blocked event delivery delay responses.
 
 \paragraph{Output and termination.}
-Saving streams the stable board to the I/O goroutine and waits for its idle
-acknowledgement before emitting \texttt{ImageOutputComplete}. Normal
-completion and user quit take different paths: after the requested turns,
-the simulation sends \texttt{doneSig}, returns, and the outer loop joins it
-before performing final output. On quit, the simulation performs final output
-itself; \texttt{quitFlag} prevents the outer loop from repeating it. The
-distributor's \texttt{wg.Wait()} tracks the simulation loop, whereas the
-map-reduce wait group tracks calculation workers. Joining the simulation
-ensures it has returned before the event channel closes. In the exit helper,
-\texttt{FinalTurnComplete} precedes image writing; \texttt{ImageOutputComplete}
-and \texttt{Quitting} follow the I/O acknowledgement.
+Saving waits for I/O acknowledgement before emitting
+\texttt{ImageOutputComplete}. At natural completion, the simulation signals
+\texttt{doneSig} and returns; the outer loop joins it and writes final output.
+On quit, the simulation writes output itself and \texttt{quitFlag} prevents
+repetition. The distributor's wait group joins the simulation before closing
+the event channel; a separate wait group tracks calculation workers.
+\texttt{FinalTurnComplete} precedes image writing, while
+\texttt{ImageOutputComplete} and \texttt{Quitting} follow I/O acknowledgement.
 
-% Add verification evidence to the evaluation before claiming deadlock freedom.
-% In particular, investigate control requests at natural completion: opposing
-% unbuffered command and doneSig sends can leave both loops blocked.
+% Control requests at natural completion still require targeted verification:
+% opposing unbuffered command and doneSig sends may block both loops.
 
 \subsection{Memory Strategies}
 
@@ -167,7 +156,7 @@ control logic. They differ in how workers represent and combine next-state
 results. This allows the evaluation to compare allocation, synchronisation,
 and event-generation costs under a common workload.
 
-\begin{table}[htbp]
+\begin{table*}[t]
 \centering
 \small
 \begin{tabularx}{\linewidth}{@{}lXX@{}}
@@ -186,7 +175,20 @@ applying changes in place; reuse them for flipped-cell events. \\
 \bottomrule
 \end{tabularx}
 \caption{Memory ownership and per-turn coordination in the three strategies.}
-\end{table}
+\end{table*}
+
+\paragraph{Memory ownership and safe updates.}
+Heap workers read the source board and write newly allocated, private strips;
+receiving all strips completes the generation before the coordinator replaces
+the board. Double-buffer workers read only the source and write disjoint strips
+of the destination, so their writes do not overlap.
+The coordinator waits for every completion signal before comparing or
+swapping the boards. Otherwise, a late worker could still be writing a board
+that has become the next generation's input. Map-reduce workers only read the
+board; the simulation goroutine alone applies the collected flips after their
+completion. In all three strategies, save and quit stream the board between
+turns and wait for I/O completion before simulation continues, preventing a
+snapshot from being changed while it is being written.
 
 Heap allocation is expected to incur repeated board-result allocation,
 whereas double buffer avoids that allocation but still compares every
@@ -205,8 +207,8 @@ We investigated how memory strategy, worker count and board size affect
 runtime and allocation. Each of the three local distributors was tested
 with 1, 2, 4, 8, 12 and 16 workers on the supplied $128\times128$ and
 $512\times512$ images - 36 configurations in total. Comparisons between
-strategies would keep the image and worker count fixed; while scaling comparisons varies
-workers within the same strategy and image. The images contain different
+strategies keep image and worker count fixed; scaling comparisons vary workers
+within the same strategy and image. The images contain different
 patterns, so comparisons between sizes also reflect differences in activity.
 
 Every benchmark operation restarted the original image and simulated
@@ -217,31 +219,17 @@ target per sample. We report median runtime, cumulative allocated bytes and
 allocation count per operation. Range bars show observed minima and maxima,
 not confidence intervals.
 
-Speedup measures how much faster a configuration completes the same workload
-than its one-worker baseline. For strategy $s$, board size $b$ and worker
-count $n$, we calculate
+For strategy $s$, board size $b$ and worker count $n$, speedup is
 \[
 S_{s,b}(n)=\frac{T_{s,b}(1)}{T_{s,b}(n)},
 \]
-where $T_{s,b}(n)$ is the median runtime of five samples for a fresh
-100-turn simulation. Both times use the same units, so these cancel:
-speedup is dimensionless and is reported as a multiplier, such as
-$2\times$, rather than in milliseconds or as a percentage. A speedup of
-$2\times$ means the same workload takes half the one-worker time;
-$1\times$ means no change, and a value below $1\times$ means a slowdown.
-For example, double buffer on $512\times512$ takes 1180.22\,ms with
-one worker and 306.95\,ms with twelve, giving
-$1180.22/306.95\approx3.84\times$ speedup.
-
-Each strategy and board size has its own one-worker baseline. The plotted
-speedup therefore measures scaling within an implementation, rather than
-speed relative to another strategy or to the independent serial correctness
-reference. It is calculated from the ratio of sample medians, not the median
-of paired sample ratios. Ideal linear scaling would give $S(n)=n$; for
-example, $12\times$ at twelve workers. Smaller gains reflect the combined
-effect of work that remains serial, coordination costs and available
-hardware resources. Because baseline runtimes differ between strategies,
-we interpret speedup alongside absolute runtime when comparing them.
+where $T_{s,b}(n)$ is the median runtime for a fresh 100-turn simulation.
+Each strategy and size uses its own one-worker baseline, so speedup measures
+scaling within that implementation. For example, double buffer on
+$512\times512$ takes 1180.22\,ms with one worker and 306.95\,ms with twelve,
+giving $3.84\times$ speedup. Ideal scaling gives $S(n)=n$; serial work,
+coordination and hardware limits reduce this gain. We compare absolute runtime
+alongside speedup because the strategies have different baseline costs.
 
 The benchmark runs the actual local distributors with in-memory I/O and an
 event consumer. Timing includes channel setup, board allocation, initial
@@ -285,7 +273,7 @@ share the available execution slots. These factors could explain why
 adding workers eventually gives little benefit, but we would need profiling
 to determine which factor has the greatest effect.
 
-\begin{figure}[htbp]
+\begin{figure*}[t]
 \centering
 \includegraphics[width=0.49\linewidth]{benchmarks/runtime.pdf}\hfill
 \includegraphics[width=0.49\linewidth]{benchmarks/speedup.pdf}
@@ -294,7 +282,7 @@ to determine which factor has the greatest effect.
 strategy for each board size. Runtime bars span the five-sample range;
 speedup uses each strategy's own one-worker median at the same size.}
 \label{fig:parallel-runtime}
-\end{figure}
+\end{figure*}
 
 \paragraph{The larger input benefits more from parallel calculation.}
 At 12 workers, heap allocation's speedup rises from $1.83\times$ on
@@ -334,7 +322,7 @@ boards avoids the repeated output-strip allocation of the heap strategy.
 Map-reduce avoids replacement boards, but its workers still allocate local
 coordinate lists. These totals measure cumulative allocation, not peak RAM.
 
-\begin{figure}[htbp]
+\begin{figure*}[t]
 \centering
 \includegraphics[width=0.49\linewidth]{benchmarks/memory.pdf}\hfill
 \includegraphics[width=0.49\linewidth]{benchmarks/allocations.pdf}
@@ -343,7 +331,7 @@ coordinate lists. These totals measure cumulative allocation, not peak RAM.
 (right) per 100-turn simulation, varying strategy and workers at each size.
 Allocated bytes do not measure peak RAM.}
 \label{fig:parallel-allocation}
-\end{figure}
+\end{figure*}
 
 \paragraph{More workers increase allocation counts without a matching rise in bytes.}
 On $512\times512$, increasing workers from 1 to 16 raises allocation counts
@@ -373,22 +361,15 @@ time it consumes.
 
 \subsection{Findings and Limitations}
 
-The measurements support two main findings: adding workers substantially
-reduces runtime before improvement levels off, and double buffer reduces
-cumulative allocated bytes across the measured workloads. Runtime rankings vary between the full run and the separate confirmation
-measurements. Strategy choice
-therefore involves both allocation behaviour and measured runtime;
-these results do not identify one strategy as best under all conditions.
+Adding workers reduces runtime before gains level off; double buffer
+consistently reduces cumulative allocated bytes. Runtime rankings change in
+the confirmation run, so no strategy is consistently fastest.
 
-The scope is limited to two supplied patterns over their first 100 turns.
-No controlled density experiment or separate event-generation benchmark
-was performed, so the effects of activity and event delivery cannot be
-separated from calculation. Fixed benchmark order and uncontrolled WSL
-host conditions may bias comparisons. Finally, differences in single-worker
-paths and strip construction mean that these are comparisons of complete
-implementations; memory policy is not the only implementation detail that
-varies. Further profiling and controlled pattern experiments would be
-needed to explain the observed costs more precisely.
+Results cover two supplied patterns over 100 turns. Density and event costs
+were not isolated, and fixed execution order and WSL host conditions may bias
+comparisons. Different single-worker paths and strip construction also mean
+that the comparison varies more than memory policy alone. Profiling and
+controlled pattern experiments would help explain the observed costs.
 
 \section{Distributed Implementation}
 
@@ -412,7 +393,7 @@ from the same generation. This extends the local map-reduce design across
 processes, although transmitting coordinates can be expensive when many
 cells change.
 
-\begin{figure}[htbp]
+\begin{figure*}[t]
 \centering
 \begin{tikzpicture}[
   node distance=12mm and 24mm,
@@ -435,7 +416,7 @@ cells change.
 \caption{Distributed roles and network messages. Worker calculations run
 concurrently; the broker combines their results before advancing the board.}
 \label{fig:distributed-flow}
-\end{figure}
+\end{figure*}
 
 The local two-worker setup passed \texttt{TestGol}, \texttt{TestPgm},
 \texttt{TestKeyboard} and \texttt{TestAlive} in manual verification.
@@ -501,20 +482,20 @@ to collect all the workers' results. Then, once the workers have completed the r
 they can return the final result to the broker, which can then return the result to the
 local controller.
 
-However, certain complications can occur when managing (\texttt{quit}),
-(\texttt{save}), (\texttt{pause/unpause}) and (\texttt{cell count}) events.
+However, certain complications can occur when managing \texttt{quit},
+\texttt{save}, \texttt{pause/unpause} and \texttt{cell count} events.
 This is because there are limited guarantees on the arrival order and arrival time of
-these events to the different workers. For example, say we have 2 workers, (\texttt{W_1})
-and (\texttt{W_2}). Say that the broker recieves a (\texttt{save}) event, and then forwards
-this to (\texttt{W_1}) and (\texttt{W_2}). It is completely possible for the (\texttt{save})
-event to arrive to (\texttt{W_1}) on, say turn (\texttt{42}), but to arrive to (\texttt{W_2})
-on turn (\texttt{43}), or event (\texttt{44}), and so on. This can be due to varying network
-latencies between (\texttt{W_1}) and the broker, and (\texttt{W_2}) and the broker.
+these events to the different workers. For example, say we have 2 workers, $W_{1}$
+and $W_{2}$. Say that the broker recieves a \texttt{save} event, and then forwards
+this to $W_{1}$ and $W_{2}$. It is completely possible for the \texttt{save}
+event to arrive to $W_{1}$ on, say turn \texttt{42}, but to arrive to $W_{2}$
+on turn \texttt{43}, or event \texttt{44}, and so on. This can be due to varying network
+latencies between $W_{1}$ and the broker, and $W_{2}$ and the broker.
 
 For simplicity, our solution uses a technique which involves sending multiple "synchronisation"
-messages, which can be used to implement a "global" total ordering (\texttt{R(s_1, E, s_2)}), such
-that (\texttt{s_1, s_2}) are tuples of synchronisation messages that have been both sent (to all workers) and had an "acknowledgment"
-message recieved (from all workers) completely before and after (\testtt{E}) respectively, and (\texttt{E})
+messages, which can be used to implement a "global" total ordering $R(s_{1}, E, s_{2})$, such
+that $s_{1}, s_{2}$ are tuples of synchronisation messages that have been both sent (to all workers) and had an "acknowledgment"
+message recieved (from all workers) completely before and after \texttt{E} respectively, and \texttt{E}
 is a list of events to be processed by the workers. Using this ordering, we can use each synchronisation
 message like a barrier after a set number of turns, at which each worker can respond to the message, then
 process and respond to all events before being triggered by another synchronisation message to continue running
@@ -539,7 +520,13 @@ well chosen to find an appropriate balance between responsiveness to events and 
 
 \subsection{Methodology and Scaling}
 
-We measured the Go distributed implementation on 19 November 2026 using
+This benchmark asks whether four Go worker services complete the same
+simulation faster than two. Each sample measures the elapsed time for an
+entire 100-turn run, rather than the time for a single turn. It evaluates
+process scaling over localhost TCP; the C++ halo-exchange extension is not
+measured here.
+
+We measured the Go distributed implementation on using
 TCP connections between separate controller, broker and worker processes
 on one WSL2 host. The machine used an Intel i7-10750H with twelve logical
 CPUs and Go 1.25.0. Each process used \texttt{GOMAXPROCS=1}; this allows
@@ -568,11 +555,11 @@ record are retained in
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.64\linewidth]{benchmarks/distributed/runs/20261119-083227/summary/runtime.pdf}
+\includegraphics[width=\linewidth]{benchmarks/distributed/runs/20261119-083227/summary/runtime.pdf}
 \captionsetup{font=small}
 \caption{Go distributed runtime for 100 turns on $512\times512$, using
-separate processes on one localhost machine. Points show three-sample
-medians; bars span sample minima and maxima, not confidence intervals.
+separate processes on one localhost machine. Points show the middle of three measured times
+(the median); bars span sample minima and maxima, not confidence intervals.
 Every process used \texttt{GOMAXPROCS=1}.}
 \label{fig:distributed-runtime}
 \end{figure}
@@ -629,12 +616,9 @@ next reliability improvements.
 
 \section{Overall Findings}
 
-The local measurements show useful parallel speedup and lower cumulative
-allocation with double buffering, without a stable runtime winner across
-runs. The distributed design extends map-reduce across RPC services, but
-central coordination and repeated board transfers remain scaling costs.
-The localhost distributed measurements improved by $1.56\times$ from two
-to four workers, but do not establish AWS scaling or fault tolerance.
-
+Double buffering reduces allocation, while parallel runtime rankings depend
+on the workload and run. The Go distributed baseline achieves $1.56\times$
+localhost speedup from two to four workers; central reduction and repeated
+board transfers remain scaling costs.
 
 \end{document}
